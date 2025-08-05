@@ -1,0 +1,255 @@
+name: Deploy TalentOz HCM
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - production
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: us-central1
+  CLUSTER_NAME: talentoz-gke
+
+jobs:
+  validate:
+    name: Validate Configuration
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.6.0
+
+    - name: Terraform Format Check
+      run: terraform fmt -check -recursive terraform/
+
+    - name: Terraform Validate
+      run: |
+        cd terraform
+        terraform init -backend=false
+        terraform validate
+
+    - name: Validate Kubernetes manifests
+      run: |
+        # Install kubeval
+        wget https://github.com/instrumenta/kubeval/releases/latest/download/kubeval-linux-amd64.tar.gz
+        tar xf kubeval-linux-amd64.tar.gz
+        sudo mv kubeval /usr/local/bin
+        
+        # Validate manifests
+        kubeval kubernetes/*.yaml
+
+    - name: Lint Python scripts
+      run: |
+        pip install flake8
+        flake8 scripts/*.py --max-line-length=120
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+
+    - name: Upload Trivy scan results
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  deploy-infrastructure:
+    name: Deploy Infrastructure
+    runs-on: ubuntu-latest
+    needs: [validate, security-scan]
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    environment: ${{ github.event.inputs.environment || 'staging' }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Google Cloud CLI
+      uses: google-github-actions/setup-gcloud@v1
+      with:
+        service_account_key: ${{ secrets.GCP_SA_KEY }}
+        project_id: ${{ env.PROJECT_ID }}
+
+    - name: Configure Docker for Artifact Registry
+      run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.6.0
+
+    - name: Terraform Init
+      run: |
+        cd terraform
+        terraform init
+
+    - name: Terraform Plan
+      run: |
+        cd terraform
+        terraform plan \
+          -var="project_id=${{ env.PROJECT_ID }}" \
+          -var="region=${{ env.REGION }}" \
+          -var="domain_name=${{ secrets.DOMAIN_NAME }}" \
+          -out=tfplan
+
+    - name: Terraform Apply
+      if: github.ref == 'refs/heads/main'
+      run: |
+        cd terraform
+        terraform apply tfplan
+
+    - name: Get cluster credentials
+      run: |
+        gcloud container clusters get-credentials ${{ env.CLUSTER_NAME }} \
+          --region ${{ env.REGION }} \
+          --project ${{ env.PROJECT_ID }}
+
+    - name: Install Helm
+      uses: azure/setup-helm@v3
+      with:
+        version: '3.12.0'
+
+    - name: Deploy Helm charts
+      run: |
+        # Add Helm repositories
+        helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+        helm repo add jetstack https://charts.jetstack.io
+        helm repo update
+
+        # Install ingress-nginx
+        helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+          --namespace ingress-nginx \
+          --create-namespace \
+          --set controller.service.type=LoadBalancer \
+          --wait
+
+        # Install cert-manager
+        helm upgrade --install cert-manager jetstack/cert-manager \
+          --namespace cert-manager \
+          --create-namespace \
+          --version v1.13.0 \
+          --set installCRDs=true \
+          --wait
+
+    - name: Deploy Kubernetes resources
+      run: |
+        # Create namespaces
+        kubectl apply -f kubernetes/namespace.yaml
+
+        # Wait for cert-manager to be ready
+        kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=cert-manager -n cert-manager --timeout=300s
+
+        # Deploy applications
+        kubectl apply -f kubernetes/erpnext-deployment.yaml
+        kubectl apply -f kubernetes/keycloak-deployment.yaml
+        kubectl apply -f kubernetes/ingress.yaml
+
+        # Wait for deployments
+        kubectl wait --for=condition=Available deployment/erpnext -n erpnext --timeout=600s
+        kubectl wait --for=condition=Ready statefulset/keycloak -n keycloak --timeout=600s
+
+    - name: Configure ERPNext
+      run: |
+        # Wait for ERPNext to be fully ready
+        sleep 60
+        
+        # Get ERPNext pod
+        ERPNEXT_POD=$(kubectl get pods -n erpnext -l app=erpnext,component=backend -o jsonpath='{.items[0].metadata.name}')
+        
+        # Configure ERPNext (basic setup)
+        kubectl exec -n erpnext $ERPNEXT_POD -c erpnext -- \
+          bench --site erp.${{ secrets.DOMAIN_NAME }} execute \
+          "frappe.db.set_value('Domain Settings', 'Domain Settings', 'hr', 1)"
+
+    - name: Configure Keycloak
+      run: |
+        # Get Keycloak admin password
+        KEYCLOAK_ADMIN_PASSWORD=$(kubectl get secret keycloak-secrets -n keycloak -o jsonpath='{.data.KEYCLOAK_ADMIN_PASSWORD}' | base64 -d)
+        
+        # Configure Keycloak using the configuration script
+        python3 scripts/configure-keycloak.py \
+          "https://id.${{ secrets.DOMAIN_NAME }}" \
+          "admin" \
+          "$KEYCLOAK_ADMIN_PASSWORD"
+
+    - name: Run health checks
+      run: |
+        # Check ERPNext health
+        kubectl get pods -n erpnext
+        kubectl get ingress -n erpnext
+        
+        # Check Keycloak health
+        kubectl get pods -n keycloak
+        kubectl get ingress -n keycloak
+        
+        # Test endpoints (basic connectivity)
+        curl -f -k https://erp.${{ secrets.DOMAIN_NAME }}/api/method/ping || echo "ERPNext not ready yet"
+        curl -f -k https://id.${{ secrets.DOMAIN_NAME }}/realms/erpnext || echo "Keycloak not ready yet"
+
+    - name: Notify deployment status
+      if: always()
+      run: |
+        if [ "${{ job.status }}" == "success" ]; then
+          echo "✅ Deployment successful!"
+          echo "ERPNext: https://erp.${{ secrets.DOMAIN_NAME }}"
+          echo "Keycloak: https://id.${{ secrets.DOMAIN_NAME }}"
+        else
+          echo "❌ Deployment failed!"
+        fi
+
+  cleanup:
+    name: Cleanup Resources
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'cleanup'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Google Cloud CLI
+      uses: google-github-actions/setup-gcloud@v1
+      with:
+        service_account_key: ${{ secrets.GCP_SA_KEY }}
+        project_id: ${{ env.PROJECT_ID }}
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.6.0
+
+    - name: Terraform Destroy
+      run: |
+        cd terraform
+        terraform init
+        terraform destroy \
+          -var="project_id=${{ env.PROJECT_ID }}" \
+          -var="region=${{ env.REGION }}" \
+          -var="domain_name=${{ secrets.DOMAIN_NAME }}" \
+          -auto-approve
+

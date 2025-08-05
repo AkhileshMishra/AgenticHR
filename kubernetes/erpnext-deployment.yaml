@@ -1,0 +1,383 @@
+# TalentOz HCM - ERPNext Deployment
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: erpnext-config
+  namespace: erpnext
+data:
+  FRAPPE_SITE_NAME_HEADER: "erp.talentoz.com"
+  FRAPPE_DB_HOST: "127.0.0.1"  # Cloud SQL Proxy
+  FRAPPE_DB_PORT: "3306"
+  FRAPPE_DB_NAME: "erpnext"
+  FRAPPE_REDIS_CACHE: "redis://redis:6379/0"
+  FRAPPE_REDIS_QUEUE: "redis://redis:6379/1"
+  FRAPPE_REDIS_SOCKETIO: "redis://redis:6379/2"
+  FRAPPE_SOCKETIO_PORT: "9000"
+  FRAPPE_WORKER_CLASS: "gthread"
+  FRAPPE_WORKERS: "4"
+  FRAPPE_THREADS: "2"
+  FRAPPE_TIMEOUT: "120"
+  FRAPPE_KEEPALIVE: "2"
+  FRAPPE_MAX_REQUESTS: "5000"
+  FRAPPE_MAX_REQUESTS_JITTER: "500"
+  FRAPPE_LOGGING: "INFO"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: erpnext-secrets
+  namespace: erpnext
+type: Opaque
+stringData:
+  FRAPPE_DB_PASSWORD: ""  # Will be populated by Secret Manager CSI
+  FRAPPE_SECRET_KEY: ""   # Will be populated by Secret Manager CSI
+  REDIS_PASSWORD: ""      # Will be populated by Secret Manager CSI
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: erpnext-sa
+  namespace: erpnext
+  annotations:
+    iam.gke.io/gcp-service-account: erpnext-sa@PROJECT_ID.iam.gserviceaccount.com
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: erpnext-sites-pvc
+  namespace: erpnext
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: standard-rwo
+
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: erpnext-nfs-pv
+spec:
+  capacity:
+    storage: 1000Gi
+  accessModes:
+    - ReadWriteMany
+  nfs:
+    server: NFS_IP  # Will be replaced with actual NFS IP
+    path: /erpnext_assets
+  storageClassName: nfs
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: erpnext-nfs-pvc
+  namespace: erpnext
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 1000Gi
+  storageClassName: nfs
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: erpnext
+  namespace: erpnext
+  labels:
+    app: erpnext
+    component: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: erpnext
+      component: backend
+  template:
+    metadata:
+      labels:
+        app: erpnext
+        component: backend
+    spec:
+      serviceAccountName: erpnext-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: erpnext
+        image: frappe/erpnext:v14
+        ports:
+        - containerPort: 8000
+          name: http
+        envFrom:
+        - configMapRef:
+            name: erpnext-config
+        - secretRef:
+            name: erpnext-secrets
+        env:
+        - name: FRAPPE_DB_USER
+          value: "erpnext"
+        volumeMounts:
+        - name: sites
+          mountPath: /home/frappe/frappe-bench/sites
+        - name: assets
+          mountPath: /home/frappe/frappe-bench/sites/assets
+        - name: logs
+          mountPath: /home/frappe/frappe-bench/logs
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /api/method/ping
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /api/method/ping
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          capabilities:
+            drop:
+            - ALL
+      
+      - name: cloud-sql-proxy
+        image: gcr.io/cloudsql-docker/gce-proxy:1.33.2
+        command:
+        - "/cloud_sql_proxy"
+        - "-instances=PROJECT_ID:REGION:INSTANCE_NAME=tcp:3306"
+        - "-credential_file=/secrets/service_account.json"
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+      
+      volumes:
+      - name: sites
+        persistentVolumeClaim:
+          claimName: erpnext-sites-pvc
+      - name: assets
+        persistentVolumeClaim:
+          claimName: erpnext-nfs-pvc
+      - name: logs
+        emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: erpnext-service
+  namespace: erpnext
+  labels:
+    app: erpnext
+    component: backend
+spec:
+  selector:
+    app: erpnext
+    component: backend
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8000
+    protocol: TCP
+  type: ClusterIP
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: erpnext-worker
+  namespace: erpnext
+  labels:
+    app: erpnext
+    component: worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: erpnext
+      component: worker
+  template:
+    metadata:
+      labels:
+        app: erpnext
+        component: worker
+    spec:
+      serviceAccountName: erpnext-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: worker
+        image: frappe/erpnext:v14
+        command: ["bench", "worker", "--queue", "default,long,short"]
+        envFrom:
+        - configMapRef:
+            name: erpnext-config
+        - secretRef:
+            name: erpnext-secrets
+        env:
+        - name: FRAPPE_DB_USER
+          value: "erpnext"
+        volumeMounts:
+        - name: sites
+          mountPath: /home/frappe/frappe-bench/sites
+        - name: assets
+          mountPath: /home/frappe/frappe-bench/sites/assets
+        - name: logs
+          mountPath: /home/frappe/frappe-bench/logs
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          capabilities:
+            drop:
+            - ALL
+      
+      - name: cloud-sql-proxy
+        image: gcr.io/cloudsql-docker/gce-proxy:1.33.2
+        command:
+        - "/cloud_sql_proxy"
+        - "-instances=PROJECT_ID:REGION:INSTANCE_NAME=tcp:3306"
+        - "-credential_file=/secrets/service_account.json"
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+      
+      volumes:
+      - name: sites
+        persistentVolumeClaim:
+          claimName: erpnext-sites-pvc
+      - name: assets
+        persistentVolumeClaim:
+          claimName: erpnext-nfs-pvc
+      - name: logs
+        emptyDir: {}
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: erpnext-scheduler
+  namespace: erpnext
+  labels:
+    app: erpnext
+    component: scheduler
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: erpnext
+      component: scheduler
+  template:
+    metadata:
+      labels:
+        app: erpnext
+        component: scheduler
+    spec:
+      serviceAccountName: erpnext-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: scheduler
+        image: frappe/erpnext:v14
+        command: ["bench", "schedule"]
+        envFrom:
+        - configMapRef:
+            name: erpnext-config
+        - secretRef:
+            name: erpnext-secrets
+        env:
+        - name: FRAPPE_DB_USER
+          value: "erpnext"
+        volumeMounts:
+        - name: sites
+          mountPath: /home/frappe/frappe-bench/sites
+        - name: assets
+          mountPath: /home/frappe/frappe-bench/sites/assets
+        - name: logs
+          mountPath: /home/frappe/frappe-bench/logs
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "250m"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          capabilities:
+            drop:
+            - ALL
+      
+      - name: cloud-sql-proxy
+        image: gcr.io/cloudsql-docker/gce-proxy:1.33.2
+        command:
+        - "/cloud_sql_proxy"
+        - "-instances=PROJECT_ID:REGION:INSTANCE_NAME=tcp:3306"
+        - "-credential_file=/secrets/service_account.json"
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+      
+      volumes:
+      - name: sites
+        persistentVolumeClaim:
+          claimName: erpnext-sites-pvc
+      - name: assets
+        persistentVolumeClaim:
+          claimName: erpnext-nfs-pvc
+      - name: logs
+        emptyDir: {}
+

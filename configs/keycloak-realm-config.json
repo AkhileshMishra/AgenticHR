@@ -1,0 +1,505 @@
+{
+  "realm": "erpnext",
+  "enabled": true,
+  "displayName": "TalentOz HCM",
+  "displayNameHtml": "<div class=\"kc-logo-text\"><span>TalentOz HCM</span></div>",
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "permanentLockout": false,
+  "maxFailureWaitSeconds": 900,
+  "minimumQuickLoginWaitSeconds": 60,
+  "waitIncrementSeconds": 60,
+  "quickLoginCheckMilliSeconds": 1000,
+  "maxDeltaTimeSeconds": 43200,
+  "failureFactor": 30,
+  "defaultSignatureAlgorithm": "RS256",
+  "revokeRefreshToken": false,
+  "refreshTokenMaxReuse": 0,
+  "accessTokenLifespan": 300,
+  "accessTokenLifespanForImplicitFlow": 900,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "ssoSessionIdleTimeoutRememberMe": 0,
+  "ssoSessionMaxLifespanRememberMe": 0,
+  "offlineSessionIdleTimeout": 2592000,
+  "offlineSessionMaxLifespanEnabled": false,
+  "offlineSessionMaxLifespan": 5184000,
+  "clientSessionIdleTimeout": 0,
+  "clientSessionMaxLifespan": 0,
+  "clientOfflineSessionIdleTimeout": 0,
+  "clientOfflineSessionMaxLifespan": 0,
+  "accessCodeLifespan": 60,
+  "accessCodeLifespanUserAction": 300,
+  "accessCodeLifespanLogin": 1800,
+  "actionTokenGeneratedByAdminLifespan": 43200,
+  "actionTokenGeneratedByUserLifespan": 300,
+  "oauth2DeviceCodeLifespan": 600,
+  "oauth2DevicePollingInterval": 5,
+  "requiredCredentials": ["password"],
+  "otpPolicyType": "totp",
+  "otpPolicyAlgorithm": "HmacSHA1",
+  "otpPolicyInitialCounter": 0,
+  "otpPolicyDigits": 6,
+  "otpPolicyLookAheadWindow": 1,
+  "otpPolicyPeriod": 30,
+  "otpSupportedApplications": ["FreeOTP", "Google Authenticator", "Microsoft Authenticator"],
+  "webAuthnPolicyRpEntityName": "TalentOz HCM",
+  "webAuthnPolicySignatureAlgorithms": ["ES256", "RS256"],
+  "webAuthnPolicyRpId": "id.talentoz.com",
+  "webAuthnPolicyAttestationConveyancePreference": "not specified",
+  "webAuthnPolicyAuthenticatorAttachment": "not specified",
+  "webAuthnPolicyRequireResidentKey": "not specified",
+  "webAuthnPolicyUserVerificationRequirement": "not specified",
+  "webAuthnPolicyCreateTimeout": 0,
+  "webAuthnPolicyAvoidSameAuthenticatorRegister": false,
+  "webAuthnPolicyAcceptableAaguids": [],
+  "clients": [
+    {
+      "clientId": "erpnext-client",
+      "name": "ERPNext Client",
+      "description": "ERPNext OIDC Client for TalentOz HCM",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "erpnext-client-secret-2024",
+      "redirectUris": [
+        "https://erp.talentoz.com/api/method/frappe.integrations.oauth2_logins.login_via_keycloak",
+        "https://erp.talentoz.com/*"
+      ],
+      "webOrigins": [
+        "https://erp.talentoz.com"
+      ],
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "bearerOnly": false,
+      "consentRequired": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "authorizationServicesEnabled": false,
+      "fullScopeAllowed": true,
+      "nodeReRegistrationTimeout": -1,
+      "defaultClientScopes": [
+        "web-origins",
+        "role_list",
+        "profile",
+        "roles",
+        "email"
+      ],
+      "optionalClientScopes": [
+        "address",
+        "phone",
+        "offline_access",
+        "microprofile-jwt"
+      ],
+      "protocolMappers": [
+        {
+          "name": "username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "username",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "preferred_username",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "email",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "email",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "email",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "given name",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "firstName",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "given_name",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "family name",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "lastName",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "family_name",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "roles",
+            "jsonType.label": "String",
+            "multivalued": "true"
+          }
+        },
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "groups",
+            "full.path": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "roles": {
+    "realm": [
+      {
+        "name": "hr_manager",
+        "description": "HR Manager role with full HR access",
+        "composite": false
+      },
+      {
+        "name": "hr_user",
+        "description": "HR User role with limited HR access",
+        "composite": false
+      },
+      {
+        "name": "employee",
+        "description": "Employee role with self-service access",
+        "composite": false
+      },
+      {
+        "name": "leave_approver",
+        "description": "Leave Approver role",
+        "composite": false
+      },
+      {
+        "name": "expense_approver",
+        "description": "Expense Approver role",
+        "composite": false
+      },
+      {
+        "name": "payroll_manager",
+        "description": "Payroll Manager role",
+        "composite": false
+      },
+      {
+        "name": "system_admin",
+        "description": "System Administrator role",
+        "composite": false
+      }
+    ]
+  },
+  "groups": [
+    {
+      "name": "HR Managers",
+      "path": "/HR Managers",
+      "realmRoles": ["hr_manager"],
+      "subGroups": []
+    },
+    {
+      "name": "HR Users",
+      "path": "/HR Users",
+      "realmRoles": ["hr_user"],
+      "subGroups": []
+    },
+    {
+      "name": "Employees",
+      "path": "/Employees",
+      "realmRoles": ["employee"],
+      "subGroups": []
+    },
+    {
+      "name": "Leave Approvers",
+      "path": "/Leave Approvers",
+      "realmRoles": ["leave_approver"],
+      "subGroups": []
+    },
+    {
+      "name": "Expense Approvers",
+      "path": "/Expense Approvers",
+      "realmRoles": ["expense_approver"],
+      "subGroups": []
+    },
+    {
+      "name": "Payroll Managers",
+      "path": "/Payroll Managers",
+      "realmRoles": ["payroll_manager"],
+      "subGroups": []
+    },
+    {
+      "name": "System Administrators",
+      "path": "/System Administrators",
+      "realmRoles": ["system_admin"],
+      "subGroups": []
+    }
+  ],
+  "identityProviders": [
+    {
+      "alias": "google",
+      "displayName": "Google",
+      "providerId": "google",
+      "enabled": true,
+      "updateProfileFirstLoginMode": "on",
+      "trustEmail": true,
+      "storeToken": false,
+      "addReadTokenRoleOnCreate": false,
+      "authenticateByDefault": false,
+      "linkOnly": false,
+      "firstBrokerLoginFlowAlias": "first broker login",
+      "config": {
+        "clientId": "${GOOGLE_CLIENT_ID}",
+        "clientSecret": "${GOOGLE_CLIENT_SECRET}",
+        "hostedDomain": "",
+        "useJwksUrl": "true",
+        "syncMode": "IMPORT"
+      }
+    },
+    {
+      "alias": "microsoft",
+      "displayName": "Microsoft",
+      "providerId": "microsoft",
+      "enabled": true,
+      "updateProfileFirstLoginMode": "on",
+      "trustEmail": true,
+      "storeToken": false,
+      "addReadTokenRoleOnCreate": false,
+      "authenticateByDefault": false,
+      "linkOnly": false,
+      "firstBrokerLoginFlowAlias": "first broker login",
+      "config": {
+        "clientId": "${MICROSOFT_CLIENT_ID}",
+        "clientSecret": "${MICROSOFT_CLIENT_SECRET}",
+        "tenant": "common",
+        "syncMode": "IMPORT"
+      }
+    }
+  ],
+  "identityProviderMappers": [
+    {
+      "name": "google-user-attribute-mapper",
+      "identityProviderAlias": "google",
+      "identityProviderMapper": "google-user-attribute-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "user.attribute": "email",
+        "claim": "email"
+      }
+    },
+    {
+      "name": "microsoft-user-attribute-mapper",
+      "identityProviderAlias": "microsoft",
+      "identityProviderMapper": "microsoft-user-attribute-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "user.attribute": "email",
+        "claim": "email"
+      }
+    }
+  ],
+  "authenticationFlows": [
+    {
+      "alias": "browser",
+      "description": "browser based authentication",
+      "providerId": "basic-flow",
+      "topLevel": true,
+      "builtIn": true,
+      "authenticationExecutions": [
+        {
+          "authenticator": "auth-cookie",
+          "requirement": "ALTERNATIVE",
+          "priority": 10,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false
+        },
+        {
+          "authenticator": "auth-spnego",
+          "requirement": "DISABLED",
+          "priority": 20,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false
+        },
+        {
+          "authenticator": "identity-provider-redirector",
+          "requirement": "ALTERNATIVE",
+          "priority": 25,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false
+        },
+        {
+          "flowAlias": "forms",
+          "requirement": "ALTERNATIVE",
+          "priority": 30,
+          "userSetupAllowed": false,
+          "autheticatorFlow": true
+        }
+      ]
+    },
+    {
+      "alias": "forms",
+      "description": "Username, password, otp and other auth forms.",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": true,
+      "authenticationExecutions": [
+        {
+          "authenticator": "auth-username-password-form",
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false
+        },
+        {
+          "flowAlias": "Browser - Conditional OTP",
+          "requirement": "CONDITIONAL",
+          "priority": 20,
+          "userSetupAllowed": false,
+          "autheticatorFlow": true
+        }
+      ]
+    },
+    {
+      "alias": "Browser - Conditional OTP",
+      "description": "Flow to determine if the OTP is required for the authentication",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": true,
+      "authenticationExecutions": [
+        {
+          "authenticator": "conditional-user-configured",
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false
+        },
+        {
+          "authenticator": "auth-otp-form",
+          "requirement": "REQUIRED",
+          "priority": 20,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false
+        }
+      ]
+    }
+  ],
+  "requiredActions": [
+    {
+      "alias": "CONFIGURE_TOTP",
+      "name": "Configure OTP",
+      "providerId": "CONFIGURE_TOTP",
+      "enabled": true,
+      "defaultAction": false,
+      "priority": 10,
+      "config": {}
+    },
+    {
+      "alias": "terms_and_conditions",
+      "name": "Terms and Conditions",
+      "providerId": "terms_and_conditions",
+      "enabled": false,
+      "defaultAction": false,
+      "priority": 20,
+      "config": {}
+    },
+    {
+      "alias": "UPDATE_PASSWORD",
+      "name": "Update Password",
+      "providerId": "UPDATE_PASSWORD",
+      "enabled": true,
+      "defaultAction": false,
+      "priority": 30,
+      "config": {}
+    },
+    {
+      "alias": "UPDATE_PROFILE",
+      "name": "Update Profile",
+      "providerId": "UPDATE_PROFILE",
+      "enabled": true,
+      "defaultAction": false,
+      "priority": 40,
+      "config": {}
+    },
+    {
+      "alias": "VERIFY_EMAIL",
+      "name": "Verify Email",
+      "providerId": "VERIFY_EMAIL",
+      "enabled": true,
+      "defaultAction": false,
+      "priority": 50,
+      "config": {}
+    },
+    {
+      "alias": "webauthn-register",
+      "name": "Webauthn Register",
+      "providerId": "webauthn-register",
+      "enabled": true,
+      "defaultAction": false,
+      "priority": 70,
+      "config": {}
+    }
+  ],
+  "browserFlow": "browser",
+  "registrationFlow": "registration",
+  "directGrantFlow": "direct grant",
+  "resetCredentialsFlow": "reset credentials",
+  "clientAuthenticationFlow": "clients",
+  "dockerAuthenticationFlow": "docker auth",
+  "attributes": {
+    "cibaBackchannelTokenDeliveryMode": "poll",
+    "cibaExpiresIn": "120",
+    "cibaInterval": "5",
+    "cibaAuthRequestedUserHint": "login_hint",
+    "parRequestUriLifespan": "60",
+    "frontendUrl": "https://id.talentoz.com",
+    "acr.loa.map": "{}",
+    "_browser_header.contentSecurityPolicyReportOnly": "",
+    "_browser_header.xContentTypeOptions": "nosniff",
+    "_browser_header.xRobotsTag": "none",
+    "_browser_header.xFrameOptions": "SAMEORIGIN",
+    "_browser_header.contentSecurityPolicy": "frame-src 'self'; frame-ancestors 'self'; object-src 'none';",
+    "_browser_header.xXSSProtection": "1; mode=block",
+    "_browser_header.strictTransportSecurity": "max-age=31536000; includeSubDomains"
+  },
+  "keycloakVersion": "22.0.0",
+  "userManagedAccessAllowed": false,
+  "clientProfiles": {
+    "profiles": []
+  },
+  "clientPolicies": {
+    "policies": []
+  }
+}
+

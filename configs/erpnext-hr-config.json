@@ -1,0 +1,325 @@
+{
+  "phase_1_hr_configuration": {
+    "description": "High Priority Base Features - Production Ready",
+    "modules": {
+      "hr": {
+        "enabled": true,
+        "features": {
+          "employee_management": {
+            "enabled": true,
+            "doctypes": [
+              "Employee",
+              "Employee Group",
+              "Branch",
+              "Department",
+              "Designation",
+              "Employment Type",
+              "Holiday List",
+              "Employee Checkin",
+              "Employee Attendance"
+            ],
+            "workflows": [
+              "Employee Onboarding",
+              "Employee Separation"
+            ]
+          },
+          "leave_management": {
+            "enabled": true,
+            "doctypes": [
+              "Leave Type",
+              "Leave Policy",
+              "Leave Period",
+              "Leave Application",
+              "Leave Allocation",
+              "Leave Encashment",
+              "Compensatory Leave Request"
+            ],
+            "features": [
+              "Leave Balance Calculation",
+              "Leave Approval Workflow",
+              "Leave Calendar",
+              "Leave Encashment",
+              "Compensatory Leave"
+            ]
+          },
+          "attendance_management": {
+            "enabled": true,
+            "doctypes": [
+              "Attendance",
+              "Attendance Request",
+              "Employee Checkin",
+              "Shift Type",
+              "Shift Request",
+              "Shift Assignment"
+            ],
+            "features": [
+              "Biometric Integration",
+              "Geo-tagged Check-in",
+              "Shift Management",
+              "Overtime Calculation",
+              "Late Entry/Early Exit Tracking"
+            ]
+          },
+          "payroll_management": {
+            "enabled": true,
+            "doctypes": [
+              "Salary Structure",
+              "Salary Component",
+              "Payroll Entry",
+              "Salary Slip",
+              "Employee Tax Exemption Declaration",
+              "Employee Tax Exemption Proof Submission",
+              "Payroll Period",
+              "Income Tax Slab"
+            ],
+            "features": [
+              "Salary Structure Assignment",
+              "Payroll Processing",
+              "Tax Calculation",
+              "Statutory Compliance",
+              "Payslip Generation",
+              "Bank File Generation"
+            ]
+          }
+        }
+      },
+      "payroll": {
+        "enabled": true,
+        "features": {
+          "salary_structure": {
+            "components": [
+              "Basic Salary",
+              "House Rent Allowance",
+              "Medical Allowance",
+              "Transport Allowance",
+              "Special Allowance",
+              "Provident Fund",
+              "Professional Tax",
+              "Income Tax",
+              "Employee State Insurance"
+            ]
+          },
+          "statutory_compliance": {
+            "enabled": true,
+            "components": [
+              "PF Calculation",
+              "ESI Calculation",
+              "Professional Tax",
+              "Income Tax",
+              "Gratuity Calculation"
+            ]
+          }
+        }
+      }
+    },
+    "domain_settings": {
+      "hr": true,
+      "payroll": true,
+      "projects": false,
+      "helpdesk": false,
+      "assets": false
+    },
+    "system_settings": {
+      "country": "India",
+      "currency": "INR",
+      "timezone": "Asia/Kolkata",
+      "date_format": "dd-mm-yyyy",
+      "time_format": "HH:mm:ss",
+      "float_precision": 2,
+      "currency_precision": 2
+    },
+    "hr_settings": {
+      "employee_number_series": "EMP-.YYYY.-",
+      "stop_birthday_reminders": false,
+      "send_leave_notification": true,
+      "auto_leave_encashment": false,
+      "include_holidays_in_total_working_days": false,
+      "max_working_hours_against_timesheet": 10,
+      "email_salary_slip_to_employee": true,
+      "encrypt_salary_slips_in_emails": true,
+      "password_policy": "Strong"
+    },
+    "leave_settings": {
+      "auto_leave_encashment": false,
+      "restrict_backdated_leave_application": true,
+      "show_leaves_of_all_department_members_in_calendar": true,
+      "automatic_leave_policy_assignment": true,
+      "leave_approval_notification_template": "Leave Approval Notification",
+      "leave_status_notification_template": "Leave Status Notification"
+    },
+    "payroll_settings": {
+      "payroll_based_on": "Leave",
+      "consider_unmarked_attendance_as": "Present",
+      "include_holidays_in_total_working_days": false,
+      "disable_rounded_total": false,
+      "fraction_of_daily_salary_for_half_day": 0.5,
+      "email_salary_slip_to_employee": true,
+      "password_policy": "Strong"
+    },
+    "workflows": {
+      "leave_application": {
+        "states": [
+          "Draft",
+          "Applied",
+          "Approved",
+          "Rejected",
+          "Cancelled"
+        ],
+        "transitions": [
+          {
+            "from": "Draft",
+            "to": "Applied",
+            "action": "Submit",
+            "allowed_roles": ["Employee"]
+          },
+          {
+            "from": "Applied",
+            "to": "Approved",
+            "action": "Approve",
+            "allowed_roles": ["HR Manager", "Leave Approver"]
+          },
+          {
+            "from": "Applied",
+            "to": "Rejected",
+            "action": "Reject",
+            "allowed_roles": ["HR Manager", "Leave Approver"]
+          }
+        ]
+      },
+      "expense_claim": {
+        "states": [
+          "Draft",
+          "Submitted",
+          "Approved",
+          "Rejected",
+          "Paid"
+        ],
+        "transitions": [
+          {
+            "from": "Draft",
+            "to": "Submitted",
+            "action": "Submit",
+            "allowed_roles": ["Employee"]
+          },
+          {
+            "from": "Submitted",
+            "to": "Approved",
+            "action": "Approve",
+            "allowed_roles": ["Expense Approver", "HR Manager"]
+          }
+        ]
+      }
+    },
+    "custom_fields": {
+      "employee": [
+        {
+          "fieldname": "employee_id",
+          "label": "Employee ID",
+          "fieldtype": "Data",
+          "unique": true,
+          "reqd": true
+        },
+        {
+          "fieldname": "emergency_contact_name",
+          "label": "Emergency Contact Name",
+          "fieldtype": "Data"
+        },
+        {
+          "fieldname": "emergency_contact_number",
+          "label": "Emergency Contact Number",
+          "fieldtype": "Data"
+        },
+        {
+          "fieldname": "blood_group",
+          "label": "Blood Group",
+          "fieldtype": "Select",
+          "options": "A+\nA-\nB+\nB-\nAB+\nAB-\nO+\nO-"
+        }
+      ]
+    },
+    "reports": [
+      "Employee Information",
+      "Monthly Attendance Sheet",
+      "Employee Leave Balance",
+      "Salary Register",
+      "Bank Remittance",
+      "Provident Fund Deductions",
+      "Professional Tax Deductions",
+      "Employee Birthday",
+      "Employees working on a holiday"
+    ],
+    "dashboards": [
+      "HR",
+      "Payroll"
+    ],
+    "integrations": {
+      "biometric_devices": {
+        "enabled": true,
+        "supported_devices": [
+          "ZKTeco",
+          "Realtime",
+          "eSSL",
+          "Mantra"
+        ]
+      },
+      "email_notifications": {
+        "enabled": true,
+        "templates": [
+          "Leave Approval Notification",
+          "Leave Status Notification",
+          "Birthday Reminder",
+          "Salary Slip Email"
+        ]
+      }
+    }
+  },
+  "keycloak_integration": {
+    "oidc_settings": {
+      "provider_name": "Keycloak",
+      "base_url": "https://id.talentoz.com",
+      "realm": "erpnext",
+      "client_id": "erpnext-client",
+      "authorization_url": "https://id.talentoz.com/realms/erpnext/protocol/openid-connect/auth",
+      "access_token_url": "https://id.talentoz.com/realms/erpnext/protocol/openid-connect/token",
+      "api_endpoint": "https://id.talentoz.com/realms/erpnext/protocol/openid-connect/userinfo",
+      "auth_url_data": {
+        "scope": "openid email profile",
+        "response_type": "code"
+      },
+      "redirect_uri": "https://erp.talentoz.com/api/method/frappe.integrations.oauth2_logins.login_via_keycloak"
+    },
+    "user_mapping": {
+      "email": "email",
+      "first_name": "given_name",
+      "last_name": "family_name",
+      "username": "preferred_username"
+    },
+    "role_mapping": {
+      "hr_manager": "HR Manager",
+      "hr_user": "HR User",
+      "employee": "Employee",
+      "leave_approver": "Leave Approver",
+      "expense_approver": "Expense Approver"
+    }
+  },
+  "security_settings": {
+    "session_timeout": 3600,
+    "password_policy": {
+      "minimum_password_score": 3,
+      "minimum_password_length": 8,
+      "require_special_characters": true,
+      "require_numbers": true,
+      "require_uppercase": true,
+      "require_lowercase": true
+    },
+    "two_factor_authentication": {
+      "enabled": true,
+      "methods": ["TOTP", "SMS"]
+    },
+    "login_attempts": {
+      "max_attempts": 5,
+      "lockout_duration": 1800
+    }
+  }
+}
+

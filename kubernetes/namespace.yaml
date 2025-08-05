@@ -1,0 +1,47 @@
+# TalentOz HCM - Kubernetes Namespaces
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: erpnext
+  labels:
+    name: erpnext
+    app: talentoz-hcm
+    component: erpnext
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: keycloak
+  labels:
+    name: keycloak
+    app: talentoz-hcm
+    component: keycloak
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    name: monitoring
+    app: talentoz-hcm
+    component: monitoring
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ingress-nginx
+  labels:
+    name: ingress-nginx
+    app: talentoz-hcm
+    component: ingress
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cert-manager
+  labels:
+    name: cert-manager
+    app: talentoz-hcm
+    component: cert-manager
+
