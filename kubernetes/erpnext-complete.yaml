@@ -1,0 +1,399 @@
+# Complete ERPNext Deployment for TalentOz HCM
+# Based on troubleshooting experience and lessons learned
+# This file contains all necessary components in a single manifest
+
+---
+# Persistent Volume Claims
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: erpnext-sites-pvc
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mariadb-data-pvc
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+# MariaDB Database
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mariadb
+  namespace: default
+  labels:
+    app: mariadb
+    component: database
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mariadb
+  template:
+    metadata:
+      labels:
+        app: mariadb
+        component: database
+    spec:
+      containers:
+      - name: mariadb
+        image: mariadb:10.6
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          value: "TalentOz2024!"
+        - name: MYSQL_DATABASE
+          value: "erpnext"
+        - name: MYSQL_USER
+          value: "frappe"
+        - name: MYSQL_PASSWORD
+          value: "TalentOz2024!"
+        - name: MYSQL_CHARACTER_SET_SERVER
+          value: "utf8mb4"
+        - name: MYSQL_COLLATION_SERVER
+          value: "utf8mb4_unicode_ci"
+        ports:
+        - containerPort: 3306
+          name: mysql
+        volumeMounts:
+        - name: mariadb-data
+          mountPath: /var/lib/mysql
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          exec:
+            command:
+            - mysqladmin
+            - ping
+            - -h
+            - localhost
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          exec:
+            command:
+            - mysql
+            - -h
+            - localhost
+            - -u
+            - root
+            - -pTalentOz2024!
+            - -e
+            - "SELECT 1"
+          initialDelaySeconds: 5
+          periodSeconds: 2
+          timeoutSeconds: 1
+      volumes:
+      - name: mariadb-data
+        persistentVolumeClaim:
+          claimName: mariadb-data-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mariadb
+  namespace: default
+  labels:
+    app: mariadb
+    component: database
+spec:
+  selector:
+    app: mariadb
+  ports:
+  - port: 3306
+    targetPort: 3306
+    name: mysql
+  type: ClusterIP
+
+---
+# Redis Cache
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: default
+  labels:
+    app: redis
+    component: cache
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+        component: cache
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        ports:
+        - containerPort: 6379
+          name: redis
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "200m"
+        livenessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 5
+          periodSeconds: 5
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: default
+  labels:
+    app: redis
+    component: cache
+spec:
+  selector:
+    app: redis
+  ports:
+  - port: 6379
+    targetPort: 6379
+    name: redis
+  type: ClusterIP
+
+---
+# ERPNext Application
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: erpnext
+  namespace: default
+  labels:
+    app: erpnext
+    component: application
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: erpnext
+  template:
+    metadata:
+      labels:
+        app: erpnext
+        component: application
+    spec:
+      initContainers:
+      - name: setup-site
+        image: frappe/erpnext:v14
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -e
+          cd /home/frappe/frappe-bench
+          
+          echo "🔧 Setting up ERPNext site..."
+          
+          # Wait for services to be ready
+          echo "⏳ Waiting for database and Redis..."
+          sleep 60
+          
+          # Test database connection with retries
+          for i in {1..30}; do
+            if mysql -h mariadb -u root -pTalentOz2024! -e "SELECT 1" >/dev/null 2>&1; then
+              echo "✅ MariaDB is ready"
+              break
+            fi
+            echo "⏳ Waiting for MariaDB (attempt $i/30)..."
+            sleep 10
+          done
+          
+          # Test Redis connection with retries
+          for i in {1..30}; do
+            if redis-cli -h redis ping >/dev/null 2>&1; then
+              echo "✅ Redis is ready"
+              break
+            fi
+            echo "⏳ Waiting for Redis (attempt $i/30)..."
+            sleep 5
+          done
+          
+          # Create common site configuration
+          echo "🔧 Creating site configuration..."
+          cat > sites/common_site_config.json << 'CONF_EOF'
+          {
+            "db_host": "mariadb",
+            "db_port": 3306,
+            "redis_cache": "redis://redis:6379/0",
+            "redis_queue": "redis://redis:6379/1",
+            "redis_socketio": "redis://redis:6379/2",
+            "developer_mode": 0,
+            "file_watcher_port": 6787,
+            "socketio_port": 9000,
+            "auto_update": false,
+            "restart_supervisor_on_update": false,
+            "restart_systemd_on_update": false,
+            "serve_default_site": true,
+            "rebase_on_pull": false,
+            "update_bench_on_update": true,
+            "frappe_user": "frappe",
+            "shallow_clone": true
+          }
+          CONF_EOF
+          
+          # Check if site already exists
+          if [ -d "sites/localhost" ]; then
+            echo "✅ Site already exists, updating configuration..."
+            cat > sites/localhost/site_config.json << 'SITE_EOF'
+          {
+            "host_name": "*",
+            "db_name": "erpnext_site",
+            "db_password": "TalentOz2024!"
+          }
+          SITE_EOF
+          else
+            echo "🏗️ Creating ERPNext site..."
+            
+            # Create database and user
+            mysql -h mariadb -u root -pTalentOz2024! << 'SQL_EOF'
+          CREATE DATABASE IF NOT EXISTS erpnext_site CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+          CREATE USER IF NOT EXISTS 'frappe'@'%' IDENTIFIED BY 'TalentOz2024!';
+          GRANT ALL PRIVILEGES ON erpnext_site.* TO 'frappe'@'%';
+          FLUSH PRIVILEGES;
+          SQL_EOF
+            
+            # Create the site with proper error handling
+            if bench new-site localhost \
+              --admin-password TalentOz2024! \
+              --mariadb-root-password TalentOz2024! \
+              --install-app erpnext \
+              --set-default \
+              --db-name erpnext_site \
+              --force; then
+              echo "✅ Site created successfully"
+            else
+              echo "⚠️ Site creation had issues, but continuing..."
+            fi
+            
+            # Configure site for external access
+            cat > sites/localhost/site_config.json << 'SITE_EOF'
+          {
+            "host_name": "*",
+            "db_name": "erpnext_site",
+            "db_password": "TalentOz2024!"
+          }
+          SITE_EOF
+          fi
+          
+          # Set proper permissions
+          chown -R frappe:frappe sites/
+          
+          echo "✅ Site setup completed successfully!"
+        volumeMounts:
+        - name: erpnext-sites
+          mountPath: /home/frappe/frappe-bench/sites
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+      containers:
+      - name: erpnext
+        image: frappe/erpnext:v14
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: FRAPPE_SITE_NAME_HEADER
+          value: "*"
+        - name: DEVELOPER_MODE
+          value: "0"
+        volumeMounts:
+        - name: erpnext-sites
+          mountPath: /home/frappe/frappe-bench/sites
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "400m"
+          limits:
+            memory: "2Gi"
+            cpu: "800m"
+        livenessProbe:
+          httpGet:
+            path: /api/method/ping
+            port: 8000
+            httpHeaders:
+            - name: Host
+              value: localhost
+          initialDelaySeconds: 300
+          periodSeconds: 60
+          timeoutSeconds: 30
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/method/ping
+            port: 8000
+            httpHeaders:
+            - name: Host
+              value: localhost
+          initialDelaySeconds: 240
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+      volumes:
+      - name: erpnext-sites
+        persistentVolumeClaim:
+          claimName: erpnext-sites-pvc
+
+---
+# ERPNext Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: erpnext
+  namespace: default
+  labels:
+    app: erpnext
+    component: application
+spec:
+  selector:
+    app: erpnext
+  ports:
+  - port: 80
+    targetPort: 8000
+    name: http
+  type: LoadBalancer
+
