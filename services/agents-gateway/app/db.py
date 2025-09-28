@@ -1,4 +1,4 @@
-"""Database configuration for attendance service."""
+"""Database configuration for agents gateway service."""
 
 import os
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,8 +16,8 @@ def get_base_db_url() -> str:
         db=os.getenv("POSTGRES_DB","hr"),
     )
 
-class Base(DeclarativeBase):
-    pass
+# Base is imported from app.models for agents-gateway
+from app.models import Base
 
 tenant_db_manager = TenantDatabaseManager(base_db_url=get_base_db_url(), base_model=Base)
 
@@ -32,6 +32,6 @@ async def get_db() -> AsyncSession:
 async def init_db():
     """Initialize database tables for all tenants."""
     # Import all models to ensure they are registered
-    from app.models import ShiftORM, AttendanceSummaryORM
+    from app.models import AgentORM, ModelProviderORM, AgentRequestORM, AgentUsageORM, AgentAuditORM, AgentRateLimitORM
     await tenant_db_manager.initialize_all_tenants_dbs()
 

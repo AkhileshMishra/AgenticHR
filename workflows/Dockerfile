@@ -1,30 +1,33 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Set work directory
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
+# Install system dependencies and Poetry
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        curl \
+    && pip install poetry \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements
-COPY pyproject.toml ./
+# Copy the entire monorepo into the container
+COPY ./pyproject.toml /app/pyproject.toml
+COPY ./poetry.lock /app/poetry.lock
+COPY ./libs /app/libs
+COPY ./workflows /app/workflows
 
-# Install Poetry
-RUN pip install poetry
-
-# Configure Poetry
-RUN poetry config virtualenvs.create false
-
-# Install dependencies
-RUN poetry install --no-dev
-
-# Copy application code
-COPY . .
+# Install shared libraries and service dependencies using poetry
+RUN cd /app && poetry install --no-root --no-directory --sync
 
 # Create non-root user
-RUN useradd -m -u 1000 worker && chown -R worker:worker /app
-USER worker
+RUN adduser --disabled-password --gecos '' appuser && chown -R appuser /app
+USER appuser
 
-# Default command
-CMD ["python", "worker.py"]
+# Run the application
+CMD ["python", "workflows/worker.py"]
+

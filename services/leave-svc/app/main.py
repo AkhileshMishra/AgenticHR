@@ -6,7 +6,7 @@ from typing import List, Optional
 from datetime import datetime, date, timedelta
 
 import structlog
-from fastapi import FastAPI, Depends, HTTPException, Query, status
+from fastapi import FastAPI, Depends, HTTPException, Query, status, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select, func, and_, or_
 from sqlalchemy.exc import IntegrityError
@@ -20,10 +20,21 @@ from py_hrms_auth import (
     get_auth_context, 
     require_roles,
     AuthContext,
-    AuthN
+    AuthN,
+    Permission,
+    require_permission,
+    require_resource_access
 )
+
 from py_hrms_auth.jwt_dep import JWKS_URL, OIDC_AUDIENCE, ISSUER
 from py_hrms_auth.middleware import SecurityHeadersMiddleware
+from py_hrms_observability import (
+    init_audit_db, AuditLogMiddleware,
+    configure_logging, LoggingMiddleware,
+    configure_tracing, MetricsMiddleware,
+    get_metrics, get_metrics_content_type
+)
+from py_hrms_tenancy import TenantMiddleware
 
 # Configure structured logging
 structlog.configure(
@@ -52,8 +63,15 @@ celery_app = Celery(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
+    service_name = "leave-svc"
+    service_version = app.version
+
+    configure_logging(service_name=service_name)
+    configure_tracing(service_name=service_name, service_version=service_version)
+
     logger.info("Starting leave-svc")
     await init_db()
+    await init_audit_db()
     yield
     logger.info("Shutting down leave-svc")
 
@@ -73,7 +91,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(TenantMiddleware)
+app.add_middleware(LoggingMiddleware, service_name="leave-svc")
+app.add_middleware(MetricsMiddleware, service_name="leave-svc")
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(AuditLogMiddleware)
+
+@app.get("/metrics")
+async def get_service_metrics():
+    return Response(content=get_metrics(), media_type=get_metrics_content_type())
 
 
 class LeaveTypeIn(BaseModel):
@@ -132,9 +158,10 @@ async def health_check():
     return {"status": "healthy", "service": "leave-svc"}
 
 @app.get("/v1/leave-types", response_model=List[LeaveTypeOut])
+@require_permission(Permission.LEAVE_READ)
 async def list_leave_types(
     session: AsyncSession = Depends(get_db),
-    auth: AuthContext = Depends(get_auth_context)
+    access_context: AuthContext = Depends(get_auth_context)
 ):
     """List all active leave types."""
     result = await session.execute(
@@ -144,10 +171,11 @@ async def list_leave_types(
     return [LeaveTypeOut.from_orm(lt) for lt in leave_types]
 
 @app.post("/v1/leave-types", response_model=LeaveTypeOut, status_code=status.HTTP_201_CREATED)
+@require_permission(Permission.LEAVE_MANAGE)
 async def create_leave_type(
     leave_type: LeaveTypeIn,
     session: AsyncSession = Depends(get_db),
-    auth: AuthContext = Depends(require_roles(["hr.admin"]))
+    access_context: AuthContext = Depends(get_auth_context)
 ):
     """Create a new leave type."""
     db_leave_type = LeaveTypeORM(**leave_type.dict())
@@ -160,7 +188,7 @@ async def create_leave_type(
 async def create_leave_request(
     request: LeaveRequestIn,
     session: AsyncSession = Depends(get_db),
-    auth: AuthContext = Depends(get_auth_context)
+    access_context: AuthContext = Depends(require_permission(Permission.LEAVE_WRITE))
 ):
     """Create a new leave request."""
     # Validate dates
@@ -193,11 +221,12 @@ async def create_leave_request(
     return LeaveRequestOut.from_orm(db_request)
 
 @app.get("/v1/leave-requests", response_model=List[LeaveRequestOut])
+@require_permission(Permission.LEAVE_READ)
 async def list_leave_requests(
     employee_id: Optional[int] = Query(None),
     status_filter: Optional[str] = Query(None, alias="status"),
     session: AsyncSession = Depends(get_db),
-    auth: AuthContext = Depends(get_auth_context)
+    access_context: AuthContext = Depends(get_auth_context)
 ):
     """List leave requests."""
     query = select(LeaveRequestORM)
@@ -222,7 +251,7 @@ async def list_leave_requests(
 async def approve_leave_request(
     request_id: int,
     session: AsyncSession = Depends(get_db),
-    auth: AuthContext = Depends(require_roles(["hr.admin", "hr.manager"]))
+    access_context: AuthContext = Depends(require_permission(Permission.LEAVE_APPROVE))
 ):
     """Approve a leave request."""
     leave_request = await session.get(LeaveRequestORM, request_id)
@@ -252,7 +281,7 @@ async def reject_leave_request(
     request_id: int,
     rejection_reason: str,
     session: AsyncSession = Depends(get_db),
-    auth: AuthContext = Depends(require_roles(["hr.admin", "hr.manager"]))
+    access_context: AuthContext = Depends(require_permission(Permission.LEAVE_APPROVE))
 ):
     """Reject a leave request."""
     leave_request = await session.get(LeaveRequestORM, request_id)
@@ -276,11 +305,13 @@ async def reject_leave_request(
     return LeaveRequestOut.from_orm(leave_request)
 
 @app.get("/v1/leave-balances/{employee_id}", response_model=List[LeaveBalanceOut])
+@require_resource_access("leave", resource_id_param="employee_id")
+@require_permission(Permission.LEAVE_READ)
 async def get_leave_balances(
     employee_id: int,
     year: Optional[int] = Query(None),
     session: AsyncSession = Depends(get_db),
-    auth: AuthContext = Depends(get_auth_context)
+    access_context: AuthContext = Depends(get_auth_context)
 ):
     """Get leave balances for an employee."""
     # Check authorization

@@ -6,7 +6,7 @@ from typing import List, Optional
 from datetime import datetime, date, timedelta
 
 import structlog
-from fastapi import FastAPI, Depends, HTTPException, Query, status
+from fastapi import FastAPI, Depends, HTTPException, Query, status, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select, func, and_
 from sqlalchemy.exc import IntegrityError
@@ -20,10 +20,20 @@ from py_hrms_auth import (
     get_auth_context, 
     require_roles,
     AuthContext,
-    AuthN
+    AuthN,
+    Permission,
+    require_permission,
+    require_resource_access
 )
 from py_hrms_auth.jwt_dep import JWKS_URL, OIDC_AUDIENCE, ISSUER
 from py_hrms_auth.middleware import SecurityHeadersMiddleware
+from py_hrms_observability import (
+    init_audit_db, AuditLogMiddleware,
+    configure_logging, LoggingMiddleware,
+    configure_tracing, MetricsMiddleware,
+    get_metrics, get_metrics_content_type
+)
+from py_hrms_tenancy import TenantMiddleware
 
 # Configure structured logging
 structlog.configure(
@@ -52,8 +62,15 @@ celery_app = Celery(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
+    service_name = "attendance-svc"
+    service_version = app.version
+
+    configure_logging(service_name=service_name)
+    configure_tracing(service_name=service_name, service_version=service_version)
+
     logger.info("Starting attendance-svc")
     await init_db()
+    await init_audit_db()
     yield
     logger.info("Shutting down attendance-svc")
 
@@ -73,7 +90,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(TenantMiddleware)
+app.add_middleware(LoggingMiddleware, service_name="attendance-svc")
+app.add_middleware(MetricsMiddleware, service_name="attendance-svc")
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(AuditLogMiddleware)
+
+@app.get("/metrics")
+async def get_service_metrics():
+    return Response(content=get_metrics(), media_type=get_metrics_content_type())
 
 
 class CheckInRequest(BaseModel):
@@ -116,10 +141,11 @@ async def health_check():
     return {"status": "healthy", "service": "attendance-svc"}
 
 @app.post("/v1/check-in", response_model=ShiftOut, status_code=status.HTTP_201_CREATED)
+@require_permission(Permission.ATTENDANCE_WRITE)
 async def check_in(
     request: CheckInRequest,
     session: AsyncSession = Depends(get_db),
-    auth: AuthContext = Depends(get_auth_context)
+    access_context: AuthContext = Depends(get_auth_context)
 ):
     """Check in an employee for their shift."""
     today = date.today()
@@ -162,11 +188,12 @@ async def check_in(
     return ShiftOut.from_orm(shift)
 
 @app.post("/v1/check-out/{shift_id}", response_model=ShiftOut)
+@require_permission(Permission.ATTENDANCE_WRITE)
 async def check_out(
     shift_id: int,
     request: CheckOutRequest,
     session: AsyncSession = Depends(get_db),
-    auth: AuthContext = Depends(get_auth_context)
+    access_context: AuthContext = Depends(get_auth_context)
 ):
     """Check out an employee from their shift."""
     shift = await session.get(ShiftORM, shift_id)
@@ -202,12 +229,13 @@ async def check_out(
     return ShiftOut.from_orm(shift)
 
 @app.get("/v1/shifts", response_model=List[ShiftOut])
+@require_permission(Permission.ATTENDANCE_READ_ALL)
 async def list_shifts(
     employee_id: Optional[int] = Query(None),
     start_date: Optional[date] = Query(None),
     end_date: Optional[date] = Query(None),
     session: AsyncSession = Depends(get_db),
-    auth: AuthContext = Depends(require_roles(["hr.admin", "hr.manager"]))
+    access_context: AuthContext = Depends(get_auth_context)
 ):
     """List shifts with optional filtering."""
     query = select(ShiftORM)
@@ -229,11 +257,13 @@ async def list_shifts(
     return [ShiftOut.from_orm(shift) for shift in shifts]
 
 @app.get("/v1/summary/{employee_id}", response_model=List[AttendanceSummaryOut])
+@require_resource_access("attendance", resource_id_param="employee_id")
+@require_permission(Permission.ATTENDANCE_READ)
 async def get_attendance_summary(
     employee_id: int,
     year: Optional[int] = Query(None),
     session: AsyncSession = Depends(get_db),
-    auth: AuthContext = Depends(get_auth_context)
+    access_context: AuthContext = Depends(get_auth_context)
 ):
     """Get attendance summary for an employee."""
     query = select(AttendanceSummaryORM).where(

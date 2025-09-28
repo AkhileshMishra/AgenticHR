@@ -1,47 +1,37 @@
 """Database configuration for employee service."""
 
 import os
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase
+from py_hrms_tenancy import get_current_tenant, TenantDatabaseManager
 
-DB_URL = "postgresql+asyncpg://{user}:{pwd}@{host}:{port}/{db}".format(
-    user=os.getenv("POSTGRES_USER","hr"),
-    pwd=os.getenv("POSTGRES_PASSWORD","hr"),
-    host=os.getenv("POSTGRES_HOST","postgres"),
-    port=os.getenv("POSTGRES_PORT","5432"),
-    db=os.getenv("POSTGRES_DB","hr"),
-)
+DB_URL_TEMPLATE = "postgresql+asyncpg://{user}:{pwd}@{host}:{port}/{db}"
 
-engine = create_async_engine(
-    DB_URL, 
-    future=True, 
-    echo=False,
-    pool_size=10,
-    max_overflow=20,
-    pool_pre_ping=True,
-    pool_recycle=3600,
-)
-
-SessionLocal = async_sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-)
+def get_base_db_url() -> str:
+    return DB_URL_TEMPLATE.format(
+        user=os.getenv("POSTGRES_USER","hr"),
+        pwd=os.getenv("POSTGRES_PASSWORD","hr"),
+        host=os.getenv("POSTGRES_HOST","postgres"),
+        port=os.getenv("POSTGRES_PORT","5432"),
+        db=os.getenv("POSTGRES_DB","hr"),
+    )
 
 class Base(DeclarativeBase):
     pass
 
+tenant_db_manager = TenantDatabaseManager(base_db_url=get_base_db_url(), base_model=Base)
+
 async def get_db() -> AsyncSession:
-    """Get database session."""
-    async with SessionLocal() as session:
-        try:
-            yield session
-        finally:
-            await session.close()
+    """Get database session for the current tenant."""
+    current_tenant_id = get_current_tenant()
+    if not current_tenant_id:
+        raise Exception("Tenant context not set for database access.")
+    async for session in tenant_db_manager.get_session(current_tenant_id):
+        yield session
 
 async def init_db():
-    """Initialize database tables."""
-    async with engine.begin() as conn:
-        # Import all models to ensure they are registered
-        from app.models import EmployeeORM
-        await conn.run_sync(Base.metadata.create_all)
+    """Initialize database tables for all tenants."""
+    # Import all models to ensure they are registered
+    from app.models import EmployeeORM
+    await tenant_db_manager.initialize_all_tenants_dbs()
+

@@ -18,8 +18,13 @@ from py_hrms_auth import (
     get_auth_context, 
     require_roles,
     AuthContext,
-    AuthN
+    AuthN,
+    Permission,
+    require_permission,
+    require_resource_access,
+    audit_log
 )
+
 from py_hrms_auth.jwt_dep import JWKS_URL, OIDC_AUDIENCE, ISSUER
 
 # Configure structured logging
@@ -49,8 +54,15 @@ celery_app = Celery(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
+    service_name = "employee-svc"
+    service_version = app.version
+
+    configure_logging(service_name=service_name)
+    configure_tracing(service_name=service_name, service_version=service_version)
+
     logger.info("Starting employee-svc")
     await init_db()
+    await init_audit_db()
     yield
     logger.info("Shutting down employee-svc")
 
@@ -97,11 +109,13 @@ async def health_check():
     return {"status": "healthy", "service": "employee-svc"}
 
 @app.get("/v1/employees", response_model=EmployeeList)
+@require_permission(Permission.EMPLOYEE_READ_ALL)
 async def list_employees(
     session: AsyncSession = Depends(get_db),
     page: int = Query(1, ge=1),
     per_page: int = Query(10, ge=1, le=100),
-    query_str: Optional[str] = Query(None, alias="query")
+    query_str: Optional[str] = Query(None, alias="query"),
+    access_context: AuthContext = Depends(get_auth_context)
 ):
     """List all employees with pagination and search."""
     query = select(EmployeeORM).where(EmployeeORM.is_active == True)
@@ -129,7 +143,7 @@ async def list_employees(
 async def create_employee(
     employee: EmployeeIn,
     session: AsyncSession = Depends(get_db),
-    auth: AuthContext = Depends(require_roles(["hr.admin"]))
+    access_context: AuthContext = Depends(require_permission(Permission.EMPLOYEE_WRITE))
 ):
     """Create a new employee."""
     try:
@@ -146,9 +160,12 @@ async def create_employee(
         raise HTTPException(status_code=409, detail="Employee with this email already exists")
 
 @app.get("/v1/employees/{employee_id}", response_model=EmployeeOut)
+@require_resource_access("employee", resource_id_param="employee_id")
+@require_permission(Permission.EMPLOYEE_READ)
 async def get_employee(
     employee_id: int,
-    session: AsyncSession = Depends(get_db)
+    session: AsyncSession = Depends(get_db),
+    access_context: AuthContext = Depends(get_auth_context)
 ):
     """Get a single employee by ID."""
     employee = await session.get(EmployeeORM, employee_id)
@@ -161,7 +178,7 @@ async def update_employee(
     employee_id: int,
     employee_update: EmployeeUpdate,
     session: AsyncSession = Depends(get_db),
-    auth: AuthContext = Depends(require_roles(["hr.admin"]))
+    access_context: AuthContext = Depends(require_permission(Permission.EMPLOYEE_WRITE))
 ):
     """Update an employee."""
     employee = await session.get(EmployeeORM, employee_id)
@@ -180,7 +197,7 @@ async def update_employee(
 async def delete_employee(
     employee_id: int,
     session: AsyncSession = Depends(get_db),
-    auth: AuthContext = Depends(require_roles(["hr.admin"]))
+    access_context: AuthContext = Depends(require_permission(Permission.EMPLOYEE_DELETE))
 ):
     """Soft delete an employee."""
     employee = await session.get(EmployeeORM, employee_id)
@@ -207,6 +224,22 @@ def reindex_employee(employee_id: int):
 
 
 from py_hrms_auth.middleware import SecurityHeadersMiddleware
+from py_hrms_observability import (
+    init_audit_db, AuditLogMiddleware,
+    configure_logging, LoggingMiddleware,
+    configure_tracing, MetricsMiddleware,
+    get_metrics, get_metrics_content_type
+)
+from py_hrms_tenancy import TenantMiddleware
 
+
+app.add_middleware(TenantMiddleware)
+app.add_middleware(LoggingMiddleware, service_name="employee-svc")
+app.add_middleware(MetricsMiddleware, service_name="employee-svc")
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(AuditLogMiddleware)
+
+@app.get("/metrics")
+async def get_service_metrics():
+    return Response(content=get_metrics(), media_type=get_metrics_content_type())
 

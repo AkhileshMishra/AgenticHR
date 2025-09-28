@@ -49,6 +49,11 @@ from .tracing import (
     create_tracing_context,
 )
 
+from .audit_log import AuditLogORM
+
+from .db import init_audit_db
+from .middleware import AuditLogMiddleware
+
 from .health import (
     HealthStatus,
     HealthCheck,
@@ -62,6 +67,9 @@ from .health import (
 )
 
 __all__ = [
+    "AuditLogORM",
+    "init_audit_db",
+    "AuditLogMiddleware",
     # Metrics
     "MetricsMiddleware",
     "track_db_operation",

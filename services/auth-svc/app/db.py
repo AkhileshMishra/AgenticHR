@@ -1,4 +1,4 @@
-"""Database configuration for attendance service."""
+"""Database configuration for auth service."""
 
 import os
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,6 +32,7 @@ async def get_db() -> AsyncSession:
 async def init_db():
     """Initialize database tables for all tenants."""
     # Import all models to ensure they are registered
-    from app.models import ShiftORM, AttendanceSummaryORM
+    # No models for auth-svc in this example, but keep for consistency
+    # from app.models import AuthORM # Example
     await tenant_db_manager.initialize_all_tenants_dbs()
 

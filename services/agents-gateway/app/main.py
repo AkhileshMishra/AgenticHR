@@ -13,10 +13,12 @@ import time
 import uuid
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
-from fastapi import FastAPI, Depends, HTTPException, Request, BackgroundTasks
+from fastapi import FastAPI, Depends, HTTPException, Request, BackgroundTasks, status
 from pydantic import BaseModel, Field
 import httpx
 import structlog
+from sqlalchemy.exc import IntegrityError
+from contextlib import asynccontextmanager
 
 # Import AgenticHR libraries
 from py_hrms_auth import (
@@ -33,6 +35,10 @@ from py_hrms_tenancy import (
     TenantMiddleware, require_tenant, tenant_aware_dependency,
     get_tenant_session
 )
+from app.db import init_db, get_db
+from app.models import AgentORM, AgentUsageORM, AgentRequestORM, AgentAuditORM, AgentRateLimitORM
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 # Configure logging and tracing
 configure_logging("agents-gateway", log_level="INFO")
@@ -40,10 +46,25 @@ configure_tracing("agents-gateway", "0.1.0")
 
 logger = get_logger(__name__)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan manager."""
+    service_name = "agents-gateway"
+    service_version = app.version
+
+    configure_logging(service_name=service_name)
+    configure_tracing(service_name=service_name, service_version=service_version)
+
+    logger.info("Starting agents-gateway")
+    await init_db()
+    yield
+    logger.info("Shutting down agents-gateway")
+
 app = FastAPI(
     title="agents-gateway",
     description="AI Agents Gateway for AgenticHR",
-    version="0.1.0"
+    version="0.1.0",
+    lifespan=lifespan
 )
 
 # Add middleware
@@ -87,6 +108,9 @@ class AgentConfig(BaseModel):
     allowed_roles: Optional[List[str]] = None
     rate_limit_per_hour: int = 100
     rate_limit_per_day: int = 1000
+
+    class Config:
+        orm_mode = True
 
 class UsageStats(BaseModel):
     """Usage statistics model"""
@@ -222,89 +246,109 @@ model_providers = {
 class AgentService:
     """Service for managing AI agents"""
     
-    def __init__(self):
-        self.default_agents = self._load_default_agents()
+    async def get_agent(self, db: AsyncSession, agent_id: int, tenant_id: str) -> Optional[AgentORM]:
+        """Get agent configuration from the database."""
+        result = await db.execute(
+            select(AgentORM).where(AgentORM.id == agent_id, AgentORM.tenant_id == tenant_id, AgentORM.is_active == True)
+        )
+        return result.scalars().first()
     
-    def _load_default_agents(self) -> Dict[int, Dict[str, Any]]:
-        """Load default agent configurations"""
-        return {
-            1: {
-                "id": 1,
-                "name": "HR Assistant",
-                "description": "General HR assistance and information",
-                "agent_type": "hr_assistant",
-                "model_provider": "openai",
-                "model_name": "gpt-4",
-                "system_prompt": "You are a helpful HR assistant for AgenticHR. Help employees with HR-related questions, policies, and procedures. Be professional, accurate, and empathetic.",
-                "capabilities": ["answer_questions", "provide_guidance", "explain_policies"],
-                "allowed_roles": ["employee", "manager", "hr_admin"],
-                "rate_limit_per_hour": 50,
-                "rate_limit_per_day": 500,
-                "is_active": True
-            },
-            2: {
-                "id": 2,
-                "name": "Leave Processor",
-                "description": "Process and manage leave requests",
-                "agent_type": "leave_processor",
-                "model_provider": "openai",
-                "model_name": "gpt-4",
-                "system_prompt": "You are a leave processing agent for AgenticHR. Help process leave requests, check balances, and provide leave-related information. Follow company policies strictly.",
-                "capabilities": ["process_leave", "check_balances", "calculate_accruals"],
-                "allowed_roles": ["employee", "manager", "hr_admin"],
-                "rate_limit_per_hour": 30,
-                "rate_limit_per_day": 300,
-                "is_active": True
-            },
-            3: {
-                "id": 3,
-                "name": "Timesheet Approver",
-                "description": "Review and approve timesheets",
-                "agent_type": "timesheet_approver",
-                "model_provider": "anthropic",
-                "model_name": "claude-3-sonnet-20240229",
-                "system_prompt": "You are a timesheet approval agent for AgenticHR. Review timesheets for accuracy, flag anomalies, and assist with approval workflows.",
-                "capabilities": ["review_timesheets", "flag_anomalies", "approve_timesheets"],
-                "allowed_roles": ["manager", "hr_admin"],
-                "rate_limit_per_hour": 20,
-                "rate_limit_per_day": 200,
-                "is_active": True
-            }
-        }
-    
-    async def get_agent(self, agent_id: int, tenant_id: str) -> Optional[Dict[str, Any]]:
-        """Get agent configuration"""
-        # In production, this would query the database
-        return self.default_agents.get(agent_id)
-    
-    async def list_agents(self, tenant_id: str, user_roles: List[str]) -> List[Dict[str, Any]]:
-        """List available agents for user"""
-        available_agents = []
+    async def list_agents(self, db: AsyncSession, tenant_id: str, user_roles: List[str]) -> List[AgentORM]:
+        """List available agents for user from the database."""
+        query = select(AgentORM).where(AgentORM.tenant_id == tenant_id, AgentORM.is_active == True)
         
-        for agent in self.default_agents.values():
-            if not agent["is_active"]:
-                continue
-            
-            # Check if user has required roles
-            allowed_roles = agent.get("allowed_roles", [])
-            if any(role in user_roles for role in allowed_roles):
+        result = await db.execute(query)
+        all_agents = result.scalars().all()
+
+        available_agents = []
+        for agent in all_agents:
+            allowed_roles = agent.allowed_roles or []
+            if not allowed_roles or any(role in user_roles for role in allowed_roles):
                 available_agents.append(agent)
         
         return available_agents
     
+    async def create_agent(self, db: AsyncSession, agent_data: AgentConfig, tenant_id: str) -> AgentORM:
+        """Create a new agent configuration in the database."""
+        new_agent = AgentORM(**agent_data.dict(), tenant_id=tenant_id)
+        db.add(new_agent)
+        await db.commit()
+        await db.refresh(new_agent)
+        return new_agent
+
+    async def update_agent(self, db: AsyncSession, agent_id: int, tenant_id: str, agent_data: AgentConfig) -> Optional[AgentORM]:
+        """Update an existing agent configuration in the database."""
+        agent = await self.get_agent(db, agent_id, tenant_id)
+        if not agent:
+            return None
+        for field, value in agent_data.dict(exclude_unset=True).items():
+            setattr(agent, field, value)
+        await db.commit()
+        await db.refresh(agent)
+        return agent
+
+    async def delete_agent(self, db: AsyncSession, agent_id: int, tenant_id: str) -> bool:
+        """Delete an agent configuration from the database."""
+        agent = await self.get_agent(db, agent_id, tenant_id)
+        if not agent:
+            return False
+        await db.delete(agent)
+        await db.commit()
+        return True
+
     async def check_rate_limit(
         self,
+        db: AsyncSession,
         agent_id: int,
         user_id: str,
-        tenant_id: str
+        tenant_id: str,
+        rate_limit_per_hour: int,
+        rate_limit_per_day: int
     ) -> bool:
-        """Check if user is within rate limits for agent"""
-        # Simplified rate limiting - in production use Redis or database
-        # For now, always allow
+        """Check if user is within rate limits for agent using the database."""
+        now = datetime.utcnow()
+        limit_key = f"{tenant_id}:{user_id}:{agent_id}"
+
+        rate_limit_entry = await db.execute(
+            select(AgentRateLimitORM).where(AgentRateLimitORM.limit_key == limit_key)
+        )
+        rate_limit_entry = rate_limit_entry.scalars().first()
+
+        if not rate_limit_entry:
+            rate_limit_entry = AgentRateLimitORM(
+                limit_key=limit_key,
+                agent_id=agent_id,
+                user_id=user_id,
+                tenant_id=tenant_id,
+                hourly_count=0,
+                daily_count=0,
+                hourly_reset_at=now + timedelta(hours=1),
+                daily_reset_at=now + timedelta(days=1),
+            )
+            db.add(rate_limit_entry)
+            await db.commit()
+            await db.refresh(rate_limit_entry)
+
+        if now > rate_limit_entry.hourly_reset_at:
+            rate_limit_entry.hourly_count = 0
+            rate_limit_entry.hourly_reset_at = now + timedelta(hours=1)
+        
+        if now > rate_limit_entry.daily_reset_at:
+            rate_limit_entry.daily_count = 0
+            rate_limit_entry.daily_reset_at = now + timedelta(days=1)
+
+        if rate_limit_entry.hourly_count >= rate_limit_per_hour or \
+           rate_limit_entry.daily_count >= rate_limit_per_day:
+            return False
+
+        rate_limit_entry.hourly_count += 1
+        rate_limit_entry.daily_count += 1
+        await db.commit()
         return True
     
     async def log_request(
         self,
+        db: AsyncSession,
         request_id: str,
         agent_id: int,
         user_id: str,
@@ -312,20 +356,66 @@ class AgentService:
         request_data: Dict[str, Any],
         response_data: Dict[str, Any],
         latency_ms: int,
-        status: str
+        status: str,
+        model_name: str,
+        provider_name: str
     ):
-        """Log agent request for audit and billing"""
-        log_business_event(
-            "agent_request",
+        """Log agent request for audit and billing."""
+        input_tokens = response_data.get("usage", {}).get("input_tokens", 0)
+        output_tokens = response_data.get("usage", {}).get("output_tokens", 0)
+        total_tokens = response_data.get("usage", {}).get("total_tokens", 0)
+
+        agent_request_log = AgentRequestORM(
             request_id=request_id,
             agent_id=agent_id,
             user_id=user_id,
             tenant_id=tenant_id,
-            status=status,
+            request_type="chat",
+            input_text=request_data.get("message"),
+            input_tokens=input_tokens,
+            model_provider=provider_name,
+            model_name=model_name,
+            output_text=response_data.get("content"),
+            output_tokens=output_tokens,
+            finish_reason=response_data.get("finish_reason"),
             latency_ms=latency_ms,
-            input_tokens=response_data.get("usage", {}).get("input_tokens", 0),
-            output_tokens=response_data.get("usage", {}).get("output_tokens", 0)
+            status=status,
+            estimated_cost=0.0
         )
+        db.add(agent_request_log)
+
+        usage_entry = await db.execute(
+            select(AgentUsageORM).where(
+                AgentUsageORM.tenant_id == tenant_id,
+                AgentUsageORM.agent_id == agent_id,
+                AgentUsageORM.user_id == user_id,
+                AgentUsageORM.date == datetime.utcnow().date()
+            )
+        )
+        usage_entry = usage_entry.scalars().first()
+
+        if not usage_entry:
+            usage_entry = AgentUsageORM(
+                tenant_id=tenant_id,
+                agent_id=agent_id,
+                user_id=user_id,
+                date=datetime.utcnow().date(),
+                agent_name="",
+                request_count=0,
+                input_tokens=0,
+                output_tokens=0,
+                total_tokens=0,
+                estimated_cost=0.0
+            )
+            db.add(usage_entry)
+            await db.flush()
+
+        usage_entry.request_count += 1
+        usage_entry.input_tokens += input_tokens
+        usage_entry.output_tokens += output_tokens
+        usage_entry.total_tokens += total_tokens
+
+        await db.commit()
 
 # Global agent service
 agent_service = AgentService()
@@ -339,7 +429,6 @@ async def check_openai_health():
         if not os.getenv("OPENAI_API_KEY"):
             return {"status": "degraded", "message": "OpenAI API key not configured"}
         
-        # Simple health check
         return {"status": "healthy", "message": "OpenAI API available"}
     except Exception as e:
         return {"status": "unhealthy", "message": f"OpenAI API error: {str(e)}"}
@@ -361,34 +450,75 @@ add_health_endpoints(app, health_checker)
 
 # API Endpoints
 
-@app.get("/v1/agents", response_model=List[Dict[str, Any]])
-@require_permission(Permission.SYSTEM_ADMIN)  # Or create specific agent permissions
-async def list_agents(
+@app.post("/v1/agents", response_model=AgentConfig, status_code=status.HTTP_201_CREATED)
+@require_permission(Permission.AGENT_WRITE)
+async def create_agent(
+    agent_data: AgentConfig,
+    db: AsyncSession = Depends(get_db),
     tenant_data=Depends(tenant_aware_dependency),
     auth=Depends(verify_bearer_token),
-    access_context=None
 ):
-    """List available agents for user"""
-    user_roles = auth.get("roles", [])
-    agents = await agent_service.list_agents(tenant_data["tenant_id"], user_roles)
-    
-    return agents
+    """Create a new AI agent configuration."""
+    try:
+        new_agent = await agent_service.create_agent(db, agent_data, tenant_data["tenant_id"])
+        return new_agent
+    except IntegrityError:
+        raise HTTPException(status_code=409, detail="Agent with this name already exists for this tenant.")
 
-@app.get("/v1/agents/{agent_id}")
-@require_permission(Permission.SYSTEM_ADMIN)
+@app.get("/v1/agents", response_model=List[AgentConfig])
+@require_permission(Permission.AGENT_READ)
+async def list_agents(
+    db: AsyncSession = Depends(get_db),
+    tenant_data=Depends(tenant_aware_dependency),
+    auth=Depends(verify_bearer_token),
+):
+    """List available agents for the user's tenant."""
+    user_roles = auth.roles
+    agents = await agent_service.list_agents(db, tenant_data["tenant_id"], user_roles)
+    return [AgentConfig.from_orm(agent) for agent in agents]
+
+@app.get("/v1/agents/{agent_id}", response_model=AgentConfig)
+@require_permission(Permission.AGENT_READ)
 async def get_agent(
     agent_id: int,
+    db: AsyncSession = Depends(get_db),
     tenant_data=Depends(tenant_aware_dependency),
     auth=Depends(verify_bearer_token),
-    access_context=None
 ):
-    """Get agent configuration"""
-    agent = await agent_service.get_agent(agent_id, tenant_data["tenant_id"])
-    
+    """Get a specific AI agent configuration."""
+    agent = await agent_service.get_agent(db, agent_id, tenant_data["tenant_id"])
     if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
-    
-    return agent
+        raise HTTPException(status_code=404, detail="Agent not found.")
+    return AgentConfig.from_orm(agent)
+
+@app.put("/v1/agents/{agent_id}", response_model=AgentConfig)
+@require_permission(Permission.AGENT_WRITE)
+async def update_agent(
+    agent_id: int,
+    agent_data: AgentConfig,
+    db: AsyncSession = Depends(get_db),
+    tenant_data=Depends(tenant_aware_dependency),
+    auth=Depends(verify_bearer_token),
+):
+    """Update an existing AI agent configuration."""
+    updated_agent = await agent_service.update_agent(db, agent_id, tenant_data["tenant_id"], agent_data)
+    if not updated_agent:
+        raise HTTPException(status_code=404, detail="Agent not found.")
+    return AgentConfig.from_orm(updated_agent)
+
+@app.delete("/v1/agents/{agent_id}", status_code=status.HTTP_204_NO_CONTENT)
+@require_permission(Permission.AGENT_DELETE)
+async def delete_agent(
+    agent_id: int,
+    db: AsyncSession = Depends(get_db),
+    tenant_data=Depends(tenant_aware_dependency),
+    auth=Depends(verify_bearer_token),
+):
+    """Delete an AI agent configuration."""
+    success = await agent_service.delete_agent(db, agent_id, tenant_data["tenant_id"])
+    if not success:
+        raise HTTPException(status_code=404, detail="Agent not found.")
+    return
 
 @app.post("/v1/agents/{agent_id}/chat", response_model=AgentResponse)
 @track_business_operation("agent_chat", service_name="agents-gateway")
@@ -396,73 +526,64 @@ async def chat_with_agent(
     agent_id: int,
     request: AgentRequest,
     background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
     tenant_data=Depends(tenant_aware_dependency),
     auth=Depends(verify_bearer_token),
-    access_context=None
 ):
-    """Chat with an AI agent"""
+    """Chat with an AI agent."""
     start_time = time.time()
     request_id = str(uuid.uuid4())
-    user_id = auth.get("user_id", "unknown")
+    user_id = auth.user_id
     tenant_id = tenant_data["tenant_id"]
     
-    # Get agent configuration
-    agent = await agent_service.get_agent(agent_id, tenant_id)
+    agent = await agent_service.get_agent(db, agent_id, tenant_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     
-    # Check if user has permission to use this agent
-    user_roles = auth.get("roles", [])
-    allowed_roles = agent.get("allowed_roles", [])
-    if not any(role in user_roles for role in allowed_roles):
+    user_roles = auth.roles
+    allowed_roles = agent.allowed_roles or []
+    if not allowed_roles or not any(role in user_roles for role in allowed_roles):
         raise HTTPException(status_code=403, detail="Access denied to this agent")
     
-    # Check rate limits
-    if not await agent_service.check_rate_limit(agent_id, user_id, tenant_id):
+    if not await agent_service.check_rate_limit(db, agent_id, user_id, tenant_id, agent.rate_limit_per_hour, agent.rate_limit_per_day):
         raise HTTPException(status_code=429, detail="Rate limit exceeded")
     
     try:
-        # Get model provider
-        provider_name = agent["model_provider"]
+        provider_name = agent.model_provider
         provider = model_providers.get(provider_name)
         
         if not provider:
             raise HTTPException(status_code=500, detail=f"Model provider not available: {provider_name}")
         
-        # Prepare messages
         messages = []
         
-        # Add system prompt
-        if agent.get("system_prompt"):
+        if agent.system_prompt:
             messages.append({
                 "role": "system",
-                "content": agent["system_prompt"]
+                "content": agent.system_prompt
             })
         
-        # Add user message
         messages.append({
             "role": "user",
             "content": request.message
         })
         
-        # Prepare model parameters
         model_params = {
-            "max_tokens": request.max_tokens or 1000,
-            "temperature": request.temperature or 0.7
+            "max_tokens": request.max_tokens or agent.model_config.get("max_tokens", 1000) if agent.model_config else 1000,
+            "temperature": request.temperature or agent.model_config.get("temperature", 0.7) if agent.model_config else 0.7
         }
         
-        # Generate response
         response_data = await provider.generate_response(
             messages=messages,
-            model=agent["model_name"],
+            model=agent.model_name,
             **model_params
         )
         
         latency_ms = int((time.time() - start_time) * 1000)
         
-        # Log request in background
         background_tasks.add_task(
             agent_service.log_request,
+            db=db,
             request_id=request_id,
             agent_id=agent_id,
             user_id=user_id,
@@ -470,96 +591,41 @@ async def chat_with_agent(
             request_data=request.dict(),
             response_data=response_data,
             latency_ms=latency_ms,
-            status="success"
+            status="success",
+            model_name=agent.model_name,
+            provider_name=provider_name
         )
         
         return AgentResponse(
             request_id=request_id,
             agent_id=agent_id,
-            agent_name=agent["name"],
+            agent_name=agent.name,
             response=response_data["content"],
             usage=response_data["usage"],
             latency_ms=latency_ms,
             model_info={
-                "provider": provider_name,
-                "model": response_data["model"]
+                "model_name": response_data["model"],
+                "provider": provider_name
             }
         )
-    
-    except Exception as e:
-        latency_ms = int((time.time() - start_time) * 1000)
         
-        # Log error in background
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Error chatting with agent", error=str(e), agent_id=agent_id, request_id=request_id)
         background_tasks.add_task(
             agent_service.log_request,
+            db=db,
             request_id=request_id,
             agent_id=agent_id,
             user_id=user_id,
             tenant_id=tenant_id,
             request_data=request.dict(),
-            response_data={"error": str(e)},
-            latency_ms=latency_ms,
-            status="error"
+            response_data={},
+            latency_ms=int((time.time() - start_time) * 1000),
+            status="failed",
+            model_name=agent.model_name,
+            provider_name=agent.model_provider
         )
-        
-        logger.error(
-            "Agent request failed",
-            request_id=request_id,
-            agent_id=agent_id,
-            error=str(e)
-        )
-        
-        raise HTTPException(status_code=500, detail=f"Agent request failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to chat with agent: {str(e)}")
 
-@app.get("/v1/usage/stats")
-@require_permission(Permission.REPORTS_READ)
-async def get_usage_stats(
-    agent_id: Optional[int] = None,
-    period: str = "day",  # day, week, month
-    tenant_data=Depends(tenant_aware_dependency),
-    auth=Depends(verify_bearer_token),
-    access_context=None
-):
-    """Get usage statistics"""
-    # Mock data for now - in production this would query the database
-    stats = [
-        UsageStats(
-            agent_id=1,
-            agent_name="HR Assistant",
-            period=period,
-            request_count=150,
-            total_tokens=45000,
-            estimated_cost=2.25,
-            avg_latency_ms=850,
-            success_rate=0.98
-        ),
-        UsageStats(
-            agent_id=2,
-            agent_name="Leave Processor",
-            period=period,
-            request_count=75,
-            total_tokens=22500,
-            estimated_cost=1.12,
-            avg_latency_ms=920,
-            success_rate=0.99
-        )
-    ]
-    
-    if agent_id:
-        stats = [s for s in stats if s.agent_id == agent_id]
-    
-    return stats
-
-@app.get("/metrics")
-async def metrics():
-    """Prometheus metrics endpoint"""
-    from py_hrms_observability import get_metrics, get_metrics_content_type
-    
-    return Response(
-        content=get_metrics(),
-        media_type=get_metrics_content_type()
-    )
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=9003)

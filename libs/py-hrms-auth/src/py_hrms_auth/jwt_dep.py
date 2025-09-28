@@ -153,13 +153,15 @@ def verify_bearer_token(
         )
 
 
+from py_hrms_tenancy import set_tenant_context
+
 def get_auth_context(token: TokenPayload = Depends(verify_bearer_token)) -> AuthContext:
     """Extract authentication context from verified token."""
     scopes = []
     if token.scope:
         scopes = token.scope.split()
     
-    return AuthContext(
+    auth_context = AuthContext(
         user_id=token.sub,
         username=token.preferred_username or token.email or token.sub,
         email=token.email,
@@ -167,6 +169,11 @@ def get_auth_context(token: TokenPayload = Depends(verify_bearer_token)) -> Auth
         tenant_id=token.tenant_id,
         scopes=scopes
     )
+
+    if auth_context.tenant_id:
+        set_tenant_context(auth_context.tenant_id)
+
+    return auth_context
 
 
 def require_roles(required_roles: List[str]):

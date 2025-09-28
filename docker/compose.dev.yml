@@ -128,6 +128,7 @@ services:
       - OIDC_ISSUER=http://keycloak:8080/realms/agentichr
       - JWKS_URL=http://keycloak:8080/realms/agentichr/protocol/openid-connect/certs
       - OIDC_AUDIENCE=agentichr-gw
+      - DEFAULT_TENANT_ID=default
     ports:
       - "9001:8000"
     depends_on:
@@ -152,6 +153,7 @@ services:
       - OIDC_ISSUER=http://keycloak:8080/realms/agentichr
       - JWKS_URL=http://keycloak:8080/realms/agentichr/protocol/openid-connect/certs
       - OIDC_AUDIENCE=agentichr-gw
+      - DEFAULT_TENANT_ID=default
     ports:
       - "9002:8000"
     depends_on:
@@ -176,6 +178,7 @@ services:
       - OIDC_ISSUER=http://keycloak:8080/realms/agentichr
       - JWKS_URL=http://keycloak:8080/realms/agentichr/protocol/openid-connect/certs
       - OIDC_AUDIENCE=agentichr-gw
+      - DEFAULT_TENANT_ID=default
     ports:
       - "9004:8000"
     depends_on:
@@ -200,6 +203,7 @@ services:
       - OIDC_ISSUER=http://keycloak:8080/realms/agentichr
       - JWKS_URL=http://keycloak:8080/realms/agentichr/protocol/openid-connect/certs
       - OIDC_AUDIENCE=agentichr-gw
+      - DEFAULT_TENANT_ID=default
     ports:
       - "9005:8000"
     depends_on:
@@ -223,6 +227,7 @@ services:
       - DATABASE_URL=postgresql+asyncpg://hr:hr@postgres:5432/hr
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - DEFAULT_TENANT_ID=default
     ports:
       - "9003:9003"
     depends_on:

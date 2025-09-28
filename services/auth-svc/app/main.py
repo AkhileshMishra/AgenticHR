@@ -11,7 +11,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, EmailStr
 from celery import Celery
 
-from py_hrms_auth import AuthContext, get_auth_context, AuthN
+from py_hrms_auth import AuthContext, get_auth_context, AuthN, Permission, require_permission
+from app.db import init_db
 from py_hrms_auth.jwt_dep import JWKS_URL, OIDC_AUDIENCE, ISSUER
 
 # Configure structured logging
@@ -45,7 +46,15 @@ celery_app = Celery(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
+    service_name = "auth-svc"
+    service_version = app.version
+
+    configure_logging(service_name=service_name)
+    configure_tracing(service_name=service_name, service_version=service_version)
+
     logger.info("Starting auth-svc")
+    await init_db()
+    await init_audit_db()
     yield
     logger.info("Shutting down auth-svc")
 
@@ -86,6 +95,7 @@ class UserProfile(BaseModel):
     tenant_id: str | None
 
 @app.get("/v1/me", response_model=UserProfile)
+@require_permission(Permission.USER_READ)
 async def get_current_user(auth: AuthContext = Depends(get_auth_context)):
     """Get the profile of the currently authenticated user."""
     return UserProfile(
@@ -113,6 +123,21 @@ def cleanup_expired_sessions():
 
 
 from py_hrms_auth.middleware import SecurityHeadersMiddleware
+from py_hrms_observability import (
+    init_audit_db, AuditLogMiddleware,
+    configure_logging, LoggingMiddleware,
+    configure_tracing, MetricsMiddleware,
+    get_metrics, get_metrics_content_type
+)
+from py_hrms_tenancy import TenantMiddleware
 
+app.add_middleware(TenantMiddleware)
+app.add_middleware(LoggingMiddleware, service_name="auth-svc")
+app.add_middleware(MetricsMiddleware, service_name="auth-svc")
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(AuditLogMiddleware)
+
+@app.get("/metrics")
+async def get_service_metrics():
+    return Response(content=get_metrics(), media_type=get_metrics_content_type())
 
