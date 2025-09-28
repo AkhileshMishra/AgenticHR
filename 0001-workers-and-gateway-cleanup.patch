@@ -1,0 +1,266 @@
+*** a/docker/kong/kong.yml
+--- b/docker/kong/kong.yml
+@@
+-_format_version: "3.0"
+-_transform: true
+-
+-services:
+-  - name: auth-svc
+-    url: http://auth-svc:8000
+-    routes:
+-      - name: auth
+-        paths: ["/auth"]
+-        strip_path: false
+-  - name: employee-svc
+-    url: http://employee-svc:8000
+-    routes:
+-      - name: employee
+-        paths: ["/employee"]
+-        strip_path: false
+-
+-plugins:
+-  - name: cors
+-    config:
+-      origins: ["*"]
+-      methods: ["GET","POST","PUT","DELETE","OPTIONS"]
+-      headers: ["Authorization","Content-Type","X-Tenant-Id","X-Request-Id"]
+-      credentials: true
+-      max_age: 3600
+-
+-  # Global rate limiting
+-  - name: rate-limiting
+-    config:
+-      minute: 100
+-      hour: 2000
+-      policy: local
+-      fault_tolerant: true
+-      hide_client_headers: false
+-
+-  # Global JWT authentication plugin
+-  - name: jwt
+-    config:
+-      key_claim_name: "iss"
+-      secret_is_base64: false
+-      claims_to_verify: ["exp", "nbf"]
+-      maximum_expiration: 3600
+-      header_names: ["authorization"]
+-      uri_param_names: ["jwt"]
+-      cookie_names: ["jwt"]
+-      run_on_preflight: false
+-
+-consumers:
+-  - username: keycloak
+-    custom_id: realm-issuer
+-
+-jwt_secrets:
+-  - consumer: keycloak
+-    key: "http://keycloak:8080/realms/agentichr"   # matches `iss` in tokens
+-    algorithm: RS256
+-    rsa_public_key: |
+-      -----BEGIN PUBLIC KEY-----
+-      MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAlSZYlqmtY9pt1kBaHeBd
+-      eXwj6PqcDymzkcVM4PcyitpAW4TtOgaCBowoSapH88WkNhAP3gURYk+0xw3I3lQt
+-      BbEBKdgjvGZx+5Pb0HcLF0lj9t0c8+xrH3eYXl8cXp6jvI1kTjC1p/JAXMnxtNPe
+-      jPo6Rlt1+SgeBTCP5xENL25PA0W5d0hZhcBFWD2VTRkZyi+hDapfayyPNGB+Gm8I
+-      QBstG5ocuECSTk+nXXF3SLLfwj1wUNjnKI5/viuFy52lNDm6lPhlZN1KZ/r0uB2b
+-      B91mYBCRTkmF5xbCQFYEXb8o2PzSUAMQpjBIXlHt6qCZRnKZ2WnvqU8KD0H0QhbO
+-      fQIDAQAB
+-      -----END PUBLIC KEY-----
++_format_version: "3.0"
++_transform: true
++
++services:
++  - name: auth-svc
++    url: http://auth-svc:8000
++    routes:
++      - name: auth
++        paths: ["/auth"]
++        strip_path: false
++  - name: employee-svc
++    url: http://employee-svc:8000
++    routes:
++      - name: employee
++        paths: ["/employee"]
++        strip_path: false
++
++plugins:
++  - name: cors
++    config:
++      origins: ["*"]
++      methods: ["GET","POST","PUT","DELETE","OPTIONS"]
++      headers: ["Authorization","Content-Type"]
++      credentials: true
++      max_age: 3600
++#
++# Note:
++# We keep Kong "thin" here (routing/CORS only). JWT validation happens inside the services
++# via libs/py-hrms-auth::verify_bearer. If you want gateway-side OIDC, we can swap in the
++# community 'kong-oidc' plugin with a custom Kong image in a follow-up PR.
+*** a/docker/compose.dev.yml
+--- b/docker/compose.dev.yml
+@@
+   employee-svc:
+     build: ../services/employee-svc
+     environment:
+       JWKS_URL: ${JWKS_URL:-http://keycloak:8080/realms/agentichr/protocol/openid-connect/certs}
+       OIDC_ISSUER: ${OIDC_ISSUER:-http://keycloak:8080/realms/agentichr}
+       OIDC_AUDIENCE: ${OIDC_AUDIENCE:-agentichr-gw}
+       POSTGRES_HOST: postgres
+       POSTGRES_DB: ${POSTGRES_DB:-hr}
+       POSTGRES_USER: ${POSTGRES_USER:-hr}
+       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hr}
+-      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672//}
++      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672//}
+     ports: [ "${EMPLOYEE_SVC_PORT:-9002}:8000" ]
+     depends_on: [ postgres, rabbitmq ]
+ 
++  # --- Celery workers (new) ---
++  auth-worker:
++    build:
++      context: ../services/auth-svc
++      dockerfile: Dockerfile
++    command: celery -A app.main.celery_app worker -l info
++    environment:
++      - RABBITMQ_URL=${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672//}
++    depends_on: [ rabbitmq ]
++
++  employee-worker:
++    build:
++      context: ../services/employee-svc
++      dockerfile: Dockerfile
++    command: celery -A app.main.celery_app worker -l info
++    environment:
++      - RABBITMQ_URL=${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672//}
++    depends_on: [ rabbitmq ]
++
+   kong:
+     image: kong:3.7
+     environment:
+       KONG_DATABASE: "off"
+       KONG_DECLARATIVE_CONFIG: /kong/kong.yml
+       KONG_PROXY_LISTEN: "0.0.0.0:8000"
+       KONG_LOG_LEVEL: notice
+     volumes:
+       - ./kong/kong.yml:/kong/kong.yml:ro
+-    depends_on: [ keycloak, auth-svc, employee-svc ]
++    depends_on: [ keycloak, auth-svc, employee-svc ]
+     ports: [ "8000:8000", "8001:8001" ]
+*** a/services/employee-svc/app/main.py
+--- b/services/employee-svc/app/main.py
+@@
+-from fastapi import FastAPI, Depends, HTTPException
+-from pydantic import BaseModel, EmailStr
+-from sqlalchemy import select
+-from sqlalchemy.exc import IntegrityError
+-from app.db import SessionLocal
+-from app.models import EmployeeORM
+-from py_hrms_auth.jwt_dep import verify_bearer
++import os
++from fastapi import FastAPI, Depends, HTTPException
++from pydantic import BaseModel, EmailStr
++from sqlalchemy import select
++from sqlalchemy.exc import IntegrityError
++from celery import Celery
++from app.db import SessionLocal
++from app.models import EmployeeORM
++from py_hrms_auth.jwt_dep import verify_bearer
+ 
+ app = FastAPI(
+     title="employee-svc",
+     description="Employee management service for AgenticHR",
+     version="0.1.0"
+ )
+ 
+ class EmployeeIn(BaseModel):
+     full_name: str
+     email: EmailStr
+ 
+ class EmployeeOut(EmployeeIn):
+     id: int
+ 
+     class Config:
+         from_attributes = True
+ 
+ @app.get("/health")
+ def health():
+     return {"status": "healthy", "service": "employee-svc", "version": "0.1.0"}
+ 
+ @app.post("/v1/employees", response_model=EmployeeOut, dependencies=[Depends(verify_bearer)])
+ async def create_employee(body: EmployeeIn):
+     """Create a new employee"""
+     async with SessionLocal() as session:
+         employee = EmployeeORM(full_name=body.full_name, email=body.email)
+         session.add(employee)
+         try:
+             await session.commit()
+         except IntegrityError:
+             await session.rollback()
+             raise HTTPException(status_code=409, detail="Email already exists")
+         await session.refresh(employee)
+         return employee
+ 
+ @app.get("/v1/employees/{emp_id}", response_model=EmployeeOut, dependencies=[Depends(verify_bearer)])
+ async def get_employee(emp_id: int):
+     """Get employee by ID"""
+     async with SessionLocal() as session:
+         result = await session.execute(select(EmployeeORM).where(EmployeeORM.id == emp_id))
+         employee = result.scalar_one_or_none()
+         if not employee:
+             raise HTTPException(status_code=404, detail="Employee not found")
+         return employee
+ 
+ @app.get("/v1/employees", response_model=list[EmployeeOut], dependencies=[Depends(verify_bearer)])
+ async def list_employees(skip: int = 0, limit: int = 100):
+     """List employees with pagination"""
+     async with SessionLocal() as session:
+         result = await session.execute(
+             select(EmployeeORM).offset(skip).limit(limit)
+         )
+         employees = result.scalars().all()
+         return employees
+ 
+ @app.put("/v1/employees/{emp_id}", response_model=EmployeeOut, dependencies=[Depends(verify_bearer)])
+ async def update_employee(emp_id: int, body: EmployeeIn):
+     """Update employee by ID"""
+     async with SessionLocal() as session:
+         result = await session.execute(select(EmployeeORM).where(EmployeeORM.id == emp_id))
+         employee = result.scalar_one_or_none()
+         if not employee:
+             raise HTTPException(status_code=404, detail="Employee not found")
+         
+         employee.full_name = body.full_name
+         employee.email = body.email
+         
+         try:
+             await session.commit()
+         except IntegrityError:
+             await session.rollback()
+             raise HTTPException(status_code=409, detail="Email already exists")
+         
+         await session.refresh(employee)
+         return employee
+ 
+ @app.delete("/v1/employees/{emp_id}", status_code=204, dependencies=[Depends(verify_bearer)])
+ async def delete_employee(emp_id: int):
+     """Delete employee by ID"""
+     async with SessionLocal() as session:
+         result = await session.execute(select(EmployeeORM).where(EmployeeORM.id == emp_id))
+         employee = result.scalar_one_or_none()
+         if not employee:
+             raise HTTPException(status_code=404, detail="Employee not found")
+         
+         await session.delete(employee)
+         await session.commit()
+         return None
++
++# --- Celery wiring (new) ---
++celery_app = Celery(
++    "employee-svc",
++    broker=os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672//"),
++    backend=None,
++)
++
++@celery_app.task(name="employee.reindex")
++def reindex_employee(emp_id: int):
++    # placeholder task to prove worker runs
++    return {"ok": True, "employee_id": emp_id}

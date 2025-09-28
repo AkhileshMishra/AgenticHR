@@ -8,62 +8,23 @@ services:
       - name: auth
         paths: ["/auth"]
         strip_path: false
-        methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
-
   - name: employee-svc
     url: http://employee-svc:8000
     routes:
       - name: employee
         paths: ["/employee"]
         strip_path: false
-        methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
 
 plugins:
-  # Global CORS plugin
   - name: cors
     config:
       origins: ["*"]
-      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
-      headers: ["Authorization", "Content-Type", "X-Tenant-Id", "X-Request-Id"]
+      methods: ["GET","POST","PUT","DELETE","OPTIONS"]
+      headers: ["Authorization","Content-Type"]
       credentials: true
       max_age: 3600
-
-  # Global rate limiting
-  - name: rate-limiting
-    config:
-      minute: 100
-      hour: 2000
-      policy: local
-      fault_tolerant: true
-      hide_client_headers: false
-
-  # Global JWT authentication plugin
-  - name: jwt
-    config:
-      key_claim_name: "iss"
-      secret_is_base64: false
-      claims_to_verify: ["exp", "nbf"]
-      maximum_expiration: 3600
-      header_names: ["authorization"]
-      uri_param_names: ["jwt"]
-      cookie_names: ["jwt"]
-      run_on_preflight: false
-
-consumers:
-  - username: keycloak
-    custom_id: realm-issuer
-
-jwt_secrets:
-  - consumer: keycloak
-    key: "http://keycloak:8080/realms/agentichr"   # matches `iss` in tokens
-    algorithm: RS256
-    rsa_public_key: |
-      -----BEGIN PUBLIC KEY-----
-      MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAlSZYlqmtY9pt1kBaHeBd
-      eXwj6PqcDymzkcVM4PcyitpAW4TtOgaCBowoSapH88WkNhAP3gURYk+0xw3I3lQt
-      BbEBKdgjvGZx+5Pb0HcLF0lj9t0c8+xrH3eYXl8cXp6jvI1kTjC1p/JAXMnxtNPe
-      jPo6Rlt1+SgeBTCP5xENL25PA0W5d0hZhcBFWD2VTRkZyi+hDapfayyPNGB+Gm8I
-      QBstG5ocuECSTk+nXXF3SLLfwj1wUNjnKI5/viuFy52lNDm6lPhlZN1KZ/r0uB2b
-      B91mYBCRTkmF5xbCQFYEXb8o2PzSUAMQpjBIXlHt6qCZRnKZ2WnvqU8KD0H0QhbO
-      fQIDAQAB
-      -----END PUBLIC KEY-----
+#
+# Note:
+# We keep Kong "thin" here (routing/CORS only). JWT validation happens inside the services
+# via libs/py-hrms-auth::verify_bearer. If you want gateway-side OIDC, we can swap in the
+# community 'kong-oidc' plugin with a custom Kong image in a follow-up PR.

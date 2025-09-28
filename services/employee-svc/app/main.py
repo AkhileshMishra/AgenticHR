@@ -1,7 +1,9 @@
+import os
 from fastapi import FastAPI, Depends, HTTPException
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
+from celery import Celery
 from app.db import SessionLocal
 from app.models import EmployeeORM
 from py_hrms_auth.jwt_dep import verify_bearer
@@ -93,3 +95,15 @@ async def delete_employee(emp_id: int):
         await session.delete(employee)
         await session.commit()
         return None
+
+# --- Celery wiring (new) ---
+celery_app = Celery(
+    "employee-svc",
+    broker=os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672//"),
+    backend=None,
+)
+
+@celery_app.task(name="employee.reindex")
+def reindex_employee(emp_id: int):
+    # placeholder task to prove worker runs
+    return {"ok": True, "employee_id": emp_id}

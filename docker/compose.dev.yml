@@ -297,6 +297,9 @@ services:
     container_name: agentichr-employee-svc
     environment:
       - POSTGRES_HOST=postgres
+      - POSTGRES_DB=${POSTGRES_DB:-hr}
+      - POSTGRES_USER=${POSTGRES_USER:-hr}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-hr}
       - REDIS_URL=redis://redis:6379/0
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672//
       - OIDC_ISSUER=http://keycloak:8080/realms/agentichr
@@ -310,6 +313,35 @@ services:
       redis:
         condition: service_healthy
       keycloak:
+        condition: service_healthy
+    networks:
+      - agentichr
+
+  # --- Celery workers (new) ---
+  auth-worker:
+    build:
+      context: ../services/auth-svc
+      dockerfile: Dockerfile
+    container_name: agentichr-auth-worker
+    command: celery -A app.main.celery_app worker -l info
+    environment:
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672//
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - agentichr
+
+  employee-worker:
+    build:
+      context: ../services/employee-svc
+      dockerfile: Dockerfile
+    container_name: agentichr-employee-worker
+    command: celery -A app.main.celery_app worker -l info
+    environment:
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672//
+    depends_on:
+      rabbitmq:
         condition: service_healthy
     networks:
       - agentichr
