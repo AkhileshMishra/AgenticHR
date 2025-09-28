@@ -250,3 +250,15 @@ help-kong: ## Show Kong-specific help
 	@echo "Kong JWT Configuration Commands:"
 	@echo "================================"
 	@grep -E '^kong\.[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
+
+
+db.migrate.attendance: ## Run attendance service database migrations
+	@echo "🗄️ Running attendance service database migrations..."
+	@docker compose -f docker/compose.dev.yml exec attendance-svc alembic upgrade head
+	@echo "✅ Attendance service database migrations complete."
+
+db.migrate.leave: ## Run leave service database migrations
+	@echo "🗄️ Running leave service database migrations..."
+	@docker compose -f docker/compose.dev.yml exec leave-svc alembic upgrade head
+	@echo "✅ Leave service database migrations complete."
+

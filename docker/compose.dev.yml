@@ -319,6 +319,17 @@ services:
     networks:
       - agentichr
 
+  workflows-worker:
+    build: ../workflows
+    environment:
+      TEMPORAL_HOST_URL: temporal:7233
+      TEMPORAL_NAMESPACE: default
+      TEMPORAL_TASK_QUEUE: leave-approvals
+    depends_on:
+      - temporal
+    networks:
+      - agentichr
+
   # --- Temporal ---
   temporal:
     image: temporalio/auto-setup:1.22.0

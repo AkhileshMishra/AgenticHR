@@ -13,6 +13,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from celery import Celery
 
+from .temporal_client import start_leave_workflow_sync
+
 from app.db import get_db, init_db
 from app.models import LeaveTypeORM, LeaveBalanceORM, LeaveRequestORM
 from fastapi.middleware.cors import CORSMiddleware
@@ -216,9 +218,184 @@ async def create_leave_request(
     await session.refresh(db_request)
     
     # Trigger approval workflow
-    trigger_leave_approval_workflow.delay(db_request.id)
-    
+    from .temporal_client import start_leave_workflow_sync
+    wf_id = start_leave_workflow_sync(str(db_request.id), db_request.employee_id, db_request.days_requested)
+    logger.info("Temporal workflow started", workflow_id=wf_id, request_id=db_request.id)
     return LeaveRequestOut.from_orm(db_request)
+
+
+@app.get("/v1/leave-requests", response_model=List[LeaveRequestOut])
+@require_permission(Permission.LEAVE_READ)
+async def list_leave_requests(
+    employee_id: Optional[int] = Query(None),
+    status_filter: Optional[str] = Query(None, alias="status"),
+    session: AsyncSession = Depends(get_db),
+    access_context: AuthContext = Depends(get_auth_context)
+):
+    """List leave requests."""
+    query = select(LeaveRequestORM)
+    
+    # If not HR admin, only show own requests
+    if not access_context.has_any_role(["hr.admin", "hr.manager"]):
+        query = query.where(LeaveRequestORM.employee_id == int(access_context.user_id))
+    elif employee_id:
+        query = query.where(LeaveRequestORM.employee_id == employee_id)
+    
+    if status_filter:
+        query = query.where(LeaveRequestORM.status == status_filter)
+    
+    query = query.order_by(LeaveRequestORM.created_at.desc())
+    
+    result = await session.execute(query)
+    requests = result.scalars().all()
+    
+    return [LeaveRequestOut.from_orm(req) for req in requests]
+
+@app.put("/v1/leave-requests/{request_id}/approve", response_model=LeaveRequestOut)
+async def approve_leave_request(
+    request_id: int,
+    session: AsyncSession = Depends(get_db),
+    access_context: AuthContext = Depends(require_permission(Permission.LEAVE_APPROVE))
+):
+    """Approve a leave request."""
+    leave_request = await session.get(LeaveRequestORM, request_id)
+    if not leave_request:
+        raise HTTPException(status_code=404, detail="Leave request not found")
+    
+    if leave_request.status != "pending":
+        raise HTTPException(status_code=400, detail="Request is not pending")
+    
+    leave_request.status = "approved"
+    leave_request.approved_by = int(access_context.user_id)
+    leave_request.approved_at = datetime.now()
+    
+    await session.commit()
+    await session.refresh(leave_request)
+    
+    # Update leave balance
+    update_leave_balance.delay(leave_request.employee_id, leave_request.leave_type_id, leave_request.days_requested)
+    
+    # Send notification
+    send_leave_approval_notification.delay(leave_request.id, "approved")
+    
+    return LeaveRequestOut.from_orm(leave_request)
+
+@app.put("/v1/leave-requests/{request_id}/reject", response_model=LeaveRequestOut)
+async def reject_leave_request(
+    request_id: int,
+    rejection_reason: str,
+    session: AsyncSession = Depends(get_db),
+    access_context: AuthContext = Depends(require_permission(Permission.LEAVE_APPROVE))
+):
+    """Reject a leave request."""
+    leave_request = await session.get(LeaveRequestORM, request_id)
+    if not leave_request:
+        raise HTTPException(status_code=404, detail="Leave request not found")
+    
+    if leave_request.status != "pending":
+        raise HTTPException(status_code=400, detail="Request is not pending")
+    
+    leave_request.status = "rejected"
+    leave_request.approved_by = int(access_context.user_id)
+    leave_request.approved_at = datetime.now()
+    leave_request.rejection_reason = rejection_reason
+    
+    await session.commit()
+    await session.refresh(leave_request)
+    
+    # Send notification
+    send_leave_approval_notification.delay(leave_request.id, "rejected")
+    
+    return LeaveRequestOut.from_orm(leave_request)
+
+@app.get("/v1/leave-balances/{employee_id}", response_model=List[LeaveBalanceOut])
+@require_resource_access("leave", resource_id_param="employee_id")
+@require_permission(Permission.LEAVE_READ)
+async def get_leave_balances(
+    employee_id: int,
+    year: Optional[int] = Query(None),
+    session: AsyncSession = Depends(get_db),
+    access_context: AuthContext = Depends(get_auth_context)
+):
+    """Get leave balances for an employee."""
+    # Check authorization
+    if not access_context.has_any_role(["hr.admin", "hr.manager"]) and int(access_context.user_id) != employee_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    query = select(LeaveBalanceORM).where(LeaveBalanceORM.employee_id == employee_id)
+    
+    if year:
+        query = query.where(LeaveBalanceORM.year == year)
+    else:
+        query = query.where(LeaveBalanceORM.year == datetime.now().year)
+    
+    result = await session.execute(query)
+    balances = result.scalars().all()
+    
+    return [LeaveBalanceOut.from_orm(balance) for balance in balances]
+
+def calculate_business_days(start_date: date, end_date: date) -> float:
+    """Calculate business days between two dates."""
+    # Simple implementation - in reality, this would account for holidays
+    current = start_date
+    days = 0
+    while current <= end_date:
+        if current.weekday() < 5:  # Monday = 0, Sunday = 6
+            days += 1
+        current += timedelta(days=1)
+    return float(days)
+
+async def check_leave_balance(session: AsyncSession, employee_id: str, leave_type_id: int, days_requested: float):
+    """Check if employee has sufficient leave balance."""
+    year = datetime.now().year
+    balance = await session.execute(
+        select(LeaveBalanceORM).where(
+            and_(
+                LeaveBalanceORM.employee_id == int(employee_id),
+                LeaveBalanceORM.leave_type_id == leave_type_id,
+                LeaveBalanceORM.year == year
+            )
+        )
+    )
+    
+    balance_record = balance.scalar_one_or_none()
+    if not balance_record:
+        raise HTTPException(status_code=400, detail="No leave balance found for this leave type")
+    
+    if balance_record.available < days_requested:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Insufficient leave balance. Available: {balance_record.available}, Requested: {days_requested}"
+        )
+
+@celery_app.task(name="leave.trigger_leave_approval_workflow")
+def trigger_leave_approval_workflow(request_id: int):
+    """Trigger leave approval workflow."""
+    logger.info("Triggering leave approval workflow", request_id=request_id)
+    # In a real implementation, this would trigger a Temporal workflow
+    print(f"Leave approval workflow triggered for request {request_id}")
+
+@celery_app.task(name="leave.update_leave_balance")
+def update_leave_balance(employee_id: int, leave_type_id: int, days_used: float):
+    """Update employee leave balance."""
+    logger.info("Updating leave balance", employee_id=employee_id, leave_type_id=leave_type_id, days_used=days_used)
+    # In a real implementation, this would update the database
+    print(f"Leave balance updated for employee {employee_id}: -{days_used} days")
+
+@celery_app.task(name="leave.send_leave_approval_notification")
+def send_leave_approval_notification(request_id: int, status: str):
+    """Send leave approval/rejection notification."""
+    logger.info("Sending leave notification", request_id=request_id, status=status)
+    # In a real implementation, this would send an email/push notification
+    print(f"Leave {status} notification sent for request {request_id}")
+
+@celery_app.task(name="leave.process_monthly_accruals")
+def process_monthly_accruals():
+    """Process monthly leave accruals for all employees."""
+    logger.info("Processing monthly leave accruals")
+    # In a real implementation, this would calculate and update accruals
+    print("Monthly leave accruals processed")
+
 
 @app.get("/v1/leave-requests", response_model=List[LeaveRequestOut])
 @require_permission(Permission.LEAVE_READ)

@@ -79,3 +79,44 @@ This is a comprehensive list of files that were created or modified during this 
 *   `/home/ubuntu/AgenticHR/workflows/worker.py`
 *   `/home/ubuntu/AgenticHR/workflows/Dockerfile`
 
+
+
+## 4. Additional Implementations (CI/CD, Temporal Worker, Alembic Scaffolds)
+
+### A) CI/CD Pipeline Enhancements
+*   **`.github/workflows/ci.yml`**: Created/updated the CI/CD pipeline to include:
+    *   Linting with `ruff`.
+    *   Unit tests with `pytest`.
+    *   Docker image builds for all services.
+    *   Trivy filesystem and image scans for security vulnerabilities (failing on HIGH/CRITICAL for FS, CRITICAL for images).
+    *   Software Bill of Materials (SBOM) generation with Syft, uploaded as a GitHub Actions artifact.
+
+### B) Temporal Worker Wired (Leave Approval Workflow)
+*   **`workflows/requirements.txt`**: Created to manage Python dependencies for the Temporal worker.
+*   **`workflows/Dockerfile`**: Updated to build a Docker image for the Temporal worker, installing dependencies from `requirements.txt`.
+*   **`workflows/leave_approval.py`**: Implemented the `LeaveApprovalWorkflow` and its associated activities (`verify_balance`, `request_manager_approval`, `record_decision`, `notify_employee`).
+*   **`workflows/worker.py`**: Created to run the Temporal worker, connecting to the Temporal server and registering the `LeaveApprovalWorkflow` and its activities.
+*   **`services/leave-svc/app/temporal_client.py`**: Created a client helper to start the `LeaveApprovalWorkflow` from the `leave-svc`.
+*   **`services/leave-svc/app/main.py`**: Modified to integrate the Temporal client, replacing the placeholder Celery task call with a call to `start_leave_workflow_sync`.
+*   **`docker/compose.dev.yml`**: Updated to include a `workflows-worker` service, configured to run the Temporal worker and connect to the Temporal server.
+
+### C) Alembic Scaffolds for Attendance-svc and Leave-svc
+*   **`alembic.ini` and `migrations/env.py`**: Created for both `attendance-svc` and `leave-svc` to enable Alembic database migrations.
+*   **`Makefile`**: Added `db.migrate.attendance` and `db.migrate.leave` targets to the root `Makefile` for running migrations specifically for these services.
+
+## Newly Modified Files (since last update)
+
+*   `/home/ubuntu/AgenticHR/.github/workflows/ci.yml` (Created)
+*   `/home/ubuntu/AgenticHR/workflows/requirements.txt` (Created)
+*   `/home/ubuntu/AgenticHR/workflows/Dockerfile`
+*   `/home/ubuntu/AgenticHR/workflows/leave_approval.py` (Created)
+*   `/home/ubuntu/AgenticHR/workflows/worker.py`
+*   `/home/ubuntu/AgenticHR/services/leave-svc/app/temporal_client.py` (Created)
+*   `/home/ubuntu/AgenticHR/services/leave-svc/app/main.py`
+*   `/home/ubuntu/AgenticHR/docker/compose.dev.yml`
+*   `/home/ubuntu/AgenticHR/services/attendance-svc/alembic.ini` (Created)
+*   `/home/ubuntu/AgenticHR/services/attendance-svc/migrations/env.py` (Created)
+*   `/home/ubuntu/AgenticHR/services/leave-svc/alembic.ini` (Created)
+*   `/home/ubuntu/AgenticHR/services/leave-svc/migrations/env.py` (Created)
+*   `/home/ubuntu/AgenticHR/Makefile`
+
