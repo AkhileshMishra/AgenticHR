@@ -37,7 +37,3 @@ ignore = ["E501"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-
-
-py-hrms-auth @ file:///libs/py-hrms-auth
-

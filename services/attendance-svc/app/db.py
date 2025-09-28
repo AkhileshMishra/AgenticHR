@@ -19,7 +19,7 @@ def get_base_db_url() -> str:
 class Base(DeclarativeBase):
     pass
 
-tenant_db_manager = TenantDatabaseManager(base_db_url=get_base_db_url(), base_model=Base)
+tenant_db_manager = TenantDatabaseManager(get_base_db_url())
 
 async def get_db() -> AsyncSession:
     """Get database session for the current tenant."""

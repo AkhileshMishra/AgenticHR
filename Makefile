@@ -262,3 +262,21 @@ db.migrate.leave: ## Run leave service database migrations
 	@docker compose -f docker/compose.dev.yml exec leave-svc alembic upgrade head
 	@echo "✅ Leave service database migrations complete."
 
+
+
+# Alembic Database Migration Targets
+attendance.db.revision: ## Generate new attendance service migration
+	@echo "📝 Generating attendance service migration..."
+	@cd services/attendance-svc && alembic revision --autogenerate -m "Initial migration"
+
+attendance.db.upgrade: ## Apply attendance service migrations
+	@echo "⬆️ Applying attendance service migrations..."
+	@cd services/attendance-svc && alembic upgrade head
+
+leave.db.revision: ## Generate new leave service migration
+	@echo "📝 Generating leave service migration..."
+	@cd services/leave-svc && alembic revision --autogenerate -m "Initial migration"
+
+leave.db.upgrade: ## Apply leave service migrations
+	@echo "⬆️ Applying leave service migrations..."
+	@cd services/leave-svc && alembic upgrade head

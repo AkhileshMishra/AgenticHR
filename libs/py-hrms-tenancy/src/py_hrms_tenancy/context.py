@@ -12,7 +12,7 @@ from typing import Optional, Dict, Any
 from contextvars import ContextVar
 from dataclasses import dataclass
 from fastapi import Request, HTTPException, Depends
-from fastapi.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 import structlog
 
 # Context variables for tenant tracking
