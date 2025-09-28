@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # Database
+  # --- Infrastructure ---
   postgres:
     image: postgres:15-alpine
     container_name: agentichr-postgres
@@ -22,7 +22,6 @@ services:
     networks:
       - agentichr
 
-  # Cache & Message Broker
   redis:
     image: redis:7-alpine
     container_name: agentichr-redis
@@ -46,233 +45,84 @@ services:
       RABBITMQ_DEFAULT_PASS: guest
     ports:
       - "5672:5672"
-      - "15672:15672"  # Management UI
+      - "15672:15672"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 30s
-      timeout: 10s
-      retries: 5
-    networks:
-      - agentichr
-
-  # Object Storage
-  minio:
-    image: minio/minio:latest
-    container_name: agentichr-minio
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio123}
-    ports:
-      - "9000:9000"
-      - "9090:9090"  # Console
-    volumes:
-      - minio_data:/data
-    command: server /data --console-address ":9090"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
-      timeout: 20s
+      timeout: 30s
       retries: 3
     networks:
       - agentichr
 
-  # Identity Provider
-  keycloak:
-    image: quay.io/keycloak/keycloak:23.0
-    container_name: agentichr-keycloak
+  minio:
+    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    container_name: agentichr-minio
     environment:
-      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
-      KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://postgres:5432/hr
-      KC_DB_USERNAME: ${POSTGRES_USER:-hr}
-      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-hr}
-      KC_HOSTNAME_STRICT: false
-      KC_HTTP_ENABLED: true
-      KC_HEALTH_ENABLED: true
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
     ports:
-      - "8080:8080"
+      - "9000:9000"
+      - "9001:9001"
     volumes:
-      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json
-    command: start-dev --import-realm
-    depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080;echo -e 'GET /health/ready HTTP/1.1\r\nhost: http://localhost\r\nConnection: close\r\n\r\n' >&3;grep 'HTTP/1.1 200 OK' <&3"]
-      interval: 30s
-      timeout: 10s
-      retries: 10
+      - minio_data:/data
+    command: server /data --console-address ":9001"
     networks:
       - agentichr
 
-  # API Gateway
+  keycloak:
+    image: quay.io/keycloak/keycloak:22.0.1
+    container_name: agentichr-keycloak
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_DB: postgres
+      KC_DB_URL_HOST: postgres
+      KC_DB_URL_DATABASE: keycloak
+      KC_DB_URL_USER: keycloak
+      KC_DB_URL_PASSWORD: keycloak_password
+      KC_HTTP_ENABLED: true
+      KC_HTTP_PORT: 8080
+      KC_PROXY: edge
+    command: start-dev
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - agentichr
+
   kong:
-    image: kong:3.4-alpine
+    image: kong:3.4
     container_name: agentichr-kong
     environment:
       KONG_DATABASE: "off"
-      KONG_DECLARATIVE_CONFIG: /kong/kong.yml
+      KONG_DECLARATIVE_CONFIG: /etc/kong/kong.yml
       KONG_PROXY_ACCESS_LOG: /dev/stdout
       KONG_ADMIN_ACCESS_LOG: /dev/stdout
       KONG_PROXY_ERROR_LOG: /dev/stderr
       KONG_ADMIN_ERROR_LOG: /dev/stderr
-      KONG_ADMIN_LISTEN: 0.0.0.0:8001
-      KONG_ADMIN_GUI_URL: http://localhost:8002
+      KONG_ADMIN_LISTEN: 0.0.0.0:8001, 0.0.0.0:8444 ssl
     ports:
-      - "8000:8000"  # Proxy
-      - "8001:8001"  # Admin API
-      - "8002:8002"  # Admin GUI
+      - "8000:8000"
+      - "8443:8443"
+      - "8001:8001"
+      - "8444:8444"
     volumes:
-      - ./kong/kong.yml:/kong/kong.yml:ro
-    depends_on:
-      - keycloak
-    healthcheck:
-      test: ["CMD", "kong", "health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
+      - ./kong/kong.yml:/etc/kong/kong.yml:ro
     networks:
       - agentichr
 
-  # Workflow Engine
-  temporal:
-    image: temporalio/auto-setup:1.22
-    container_name: agentichr-temporal
-    environment:
-      - DB=postgresql
-      - DB_PORT=5432
-      - POSTGRES_USER=${POSTGRES_USER:-hr}
-      - POSTGRES_PWD=${POSTGRES_PASSWORD:-hr}
-      - POSTGRES_SEEDS=postgres
-      - DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/development-sql.yaml
-    ports:
-      - "7233:7233"  # Frontend
-      - "8233:8233"  # Web UI
-    volumes:
-      - ./temporal/dynamicconfig:/etc/temporal/config/dynamicconfig
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - agentichr
-
-  # Event Streaming
-  nats:
-    image: nats:2.10-alpine
-    container_name: agentichr-nats
-    ports:
-      - "4222:4222"  # Client connections
-      - "8222:8222"  # HTTP monitoring
-      - "6222:6222"  # Routing port for clustering
-    command: [
-      "--jetstream",
-      "--store_dir=/data",
-      "--http_port=8222"
-    ]
-    volumes:
-      - nats_data:/data
-    networks:
-      - agentichr
-
-  # Search Engine
-  opensearch:
-    image: opensearchproject/opensearch:2.11.0
-    container_name: agentichr-opensearch
-    environment:
-      - cluster.name=agentichr-cluster
-      - node.name=agentichr-node
-      - discovery.type=single-node
-      - bootstrap.memory_lock=true
-      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
-      - "DISABLE_INSTALL_DEMO_CONFIG=true"
-      - "DISABLE_SECURITY_PLUGIN=true"
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-      nofile:
-        soft: 65536
-        hard: 65536
-    ports:
-      - "9200:9200"
-      - "9600:9600"
-    volumes:
-      - opensearch_data:/usr/share/opensearch/data
-    networks:
-      - agentichr
-
-  # Observability
-  prometheus:
-    image: prom/prometheus:v2.47.0
-    container_name: agentichr-prometheus
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheus_data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/etc/prometheus/console_libraries'
-      - '--web.console.templates=/etc/prometheus/consoles'
-      - '--web.enable-lifecycle'
-    networks:
-      - agentichr
-
-  grafana:
-    image: grafana/grafana:10.2.0
-    container_name: agentichr-grafana
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-    ports:
-      - "3000:3000"
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./observability/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
-      - ./observability/grafana/datasources:/etc/grafana/provisioning/datasources:ro
-    networks:
-      - agentichr
-
-  loki:
-    image: grafana/loki:2.9.0
-    container_name: agentichr-loki
-    ports:
-      - "3100:3100"
-    volumes:
-      - ./observability/loki.yml:/etc/loki/local-config.yaml:ro
-      - loki_data:/loki
-    command: -config.file=/etc/loki/local-config.yaml
-    networks:
-      - agentichr
-
-  # OpenTelemetry Collector
-  otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.89.0
-    container_name: agentichr-otel-collector
-    ports:
-      - "4317:4317"   # OTLP gRPC receiver
-      - "4318:4318"   # OTLP HTTP receiver
-      - "8888:8888"   # Prometheus metrics
-    volumes:
-      - ./observability/otel-collector.yml:/etc/otel-collector-config.yml:ro
-    command: ["--config=/etc/otel-collector-config.yml"]
-    depends_on:
-      - prometheus
-      - loki
-    networks:
-      - agentichr
-
-  # Core Services
+  # --- Application Services ---
   auth-svc:
     build:
       context: ../services/auth-svc
       dockerfile: Dockerfile
     container_name: agentichr-auth-svc
     environment:
-      - POSTGRES_HOST=postgres
+      - DATABASE_URL=postgresql+asyncpg://hr:hr@postgres:5432/hr
       - REDIS_URL=redis://redis:6379/0
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672//
       - OIDC_ISSUER=http://keycloak:8080/realms/agentichr
@@ -296,28 +146,68 @@ services:
       dockerfile: Dockerfile
     container_name: agentichr-employee-svc
     environment:
-      - POSTGRES_HOST=postgres
-      - POSTGRES_DB=${POSTGRES_DB:-hr}
-      - POSTGRES_USER=${POSTGRES_USER:-hr}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-hr}
+      - DATABASE_URL=postgresql+asyncpg://hr:hr@postgres:5432/hr
       - REDIS_URL=redis://redis:6379/0
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672//
-      - OIDC_ISSUER=http://keycloak:8080/realms/agentichr
-      - JWKS_URL=http://keycloak:8080/realms/agentichr/protocol/openid-connect/certs
-      - OIDC_AUDIENCE=agentichr-gw
     ports:
       - "9002:8000"
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
-      keycloak:
+    networks:
+      - agentichr
+
+  attendance-svc:
+    build:
+      context: ../services/attendance-svc
+      dockerfile: Dockerfile
+    container_name: agentichr-attendance-svc
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://hr:hr@postgres:5432/hr
+    ports:
+      - "9004:8000"
+    depends_on:
+      postgres:
         condition: service_healthy
     networks:
       - agentichr
 
-  # --- Celery workers (new) ---
+  leave-svc:
+    build:
+      context: ../services/leave-svc
+      dockerfile: Dockerfile
+    container_name: agentichr-leave-svc
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://hr:hr@postgres:5432/hr
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672//
+    ports:
+      - "9005:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - agentichr
+
+  agents-gateway:
+    build:
+      context: ../services/agents-gateway
+      dockerfile: Dockerfile
+    container_name: agentichr-agents-gateway
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://hr:hr@postgres:5432/hr
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    ports:
+      - "9003:9003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - agentichr
+
+  # --- Workers ---
   auth-worker:
     build:
       context: ../services/auth-svc
@@ -346,65 +236,6 @@ services:
     networks:
       - agentichr
 
-  # --- AI Agents Gateway ---
-  agents-gateway:
-    build:
-      context: ../services/agents-gateway
-      dockerfile: Dockerfile
-    container_name: agentichr-agents-gateway
-    environment:
-      - DATABASE_URL=postgresql+asyncpg://agentichr:agentichr123@postgres:5432/agentichr
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - ENVIRONMENT=development
-      - REDIS_URL=redis://redis:6379/0
-      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672//
-    ports:
-      - "9003:9003"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - agentichr
-
-  # --- Temporal Workflow Engine ---
-  temporal:
-    image: temporalio/auto-setup:1.22.0
-    container_name: agentichr-temporal
-    environment:
-      - DB=postgresql
-      - DB_PORT=5432
-      - POSTGRES_USER=${POSTGRES_USER:-hr}
-      - POSTGRES_PWD=${POSTGRES_PASSWORD:-hr}
-      - POSTGRES_SEEDS=postgres
-      - DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/development-sql.yaml
-    ports:
-      - "7233:7233"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    volumes:
-      - temporal_data:/etc/temporal
-    networks:
-      - agentichr
-
-  # Temporal Web UI
-  temporal-web:
-    image: temporalio/web:2.21.3
-    container_name: agentichr-temporal-web
-    environment:
-      - TEMPORAL_ADDRESS=temporal:7233
-      - TEMPORAL_CORS_ORIGINS=http://localhost:3000
-    ports:
-      - "8088:8088"
-    depends_on:
-      - temporal
-    networks:
-      - agentichr
-
-  # Workflow Worker
   workflow-worker:
     build:
       context: ../workflows
@@ -414,18 +245,38 @@ services:
     environment:
       - TEMPORAL_HOST=temporal:7233
       - TEMPORAL_NAMESPACE=agentichr
-      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672//
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_DB=${POSTGRES_DB:-hr}
-      - POSTGRES_USER=${POSTGRES_USER:-hr}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-hr}
-      - INTERNAL_API_BASE=http://kong:8000
     depends_on:
       - temporal
-      - rabbitmq
-      - postgres
-    restart: unless-stopped
+    networks:
+      - agentichr
+
+  # --- Temporal ---
+  temporal:
+    image: temporalio/auto-setup:1.22.0
+    container_name: agentichr-temporal
+    ports:
+      - "7233:7233"
+    environment:
+      - DB=postgresql
+      - DB_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-hr}
+      - POSTGRES_PWD=${POSTGRES_PASSWORD:-hr}
+      - POSTGRES_SEEDS=temporal
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - agentichr
+
+  temporal-ui:
+    image: temporalio/ui:2.18.0
+    container_name: agentichr-temporal-ui
+    ports:
+      - "8088:8088"
+    environment:
+      - TEMPORAL_GRPC_ENDPOINT=temporal:7233
+    depends_on:
+      - temporal
     networks:
       - agentichr
 
@@ -434,13 +285,9 @@ volumes:
   redis_data:
   rabbitmq_data:
   minio_data:
-  nats_data:
-  opensearch_data:
-  prometheus_data:
-  grafana_data:
-  loki_data:
   temporal_data:
 
 networks:
   agentichr:
     driver: bridge
+

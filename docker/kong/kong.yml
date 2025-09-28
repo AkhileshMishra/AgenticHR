@@ -8,12 +8,28 @@ services:
       - name: auth
         paths: ["/auth"]
         strip_path: false
+
   - name: employee-svc
     url: http://employee-svc:8000
     routes:
       - name: employee
         paths: ["/employee"]
         strip_path: false
+
+  - name: attendance-svc
+    url: http://attendance-svc:8000
+    routes:
+      - name: attendance
+        paths: ["/attendance"]
+        strip_path: false
+
+  - name: leave-svc
+    url: http://leave-svc:8000
+    routes:
+      - name: leave
+        paths: ["/leave"]
+        strip_path: false
+
   - name: agents-gateway
     url: http://agents-gateway:9003
     routes:
@@ -29,8 +45,9 @@ plugins:
       headers: ["Authorization","Content-Type"]
       credentials: true
       max_age: 3600
-#
-# Note:
-# We keep Kong "thin" here (routing/CORS only). JWT validation happens inside the services
-# via libs/py-hrms-auth::verify_bearer. If you want gateway-side OIDC, we can swap in the
-# community 'kong-oidc' plugin with a custom Kong image in a follow-up PR.
+
+  - name: rate-limiting
+    config:
+      minute: 100
+      policy: local
+

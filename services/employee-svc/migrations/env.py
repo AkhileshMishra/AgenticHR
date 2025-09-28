@@ -5,7 +5,8 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 import os
 
-from app.models import Base  # metadata
+from app.db import Base  # metadata
+from app.models import EmployeeORM  # Import all models
 
 config = context.config
 if config.config_file_name:

@@ -1,10 +1,11 @@
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+"""Employee database models."""
+
+from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import String, Integer, Boolean, DateTime, Index
 from sqlalchemy.sql import func
 from datetime import datetime
 
-class Base(DeclarativeBase): 
-    pass
+from app.db import Base
 
 class EmployeeORM(Base):
     __tablename__ = "employees"

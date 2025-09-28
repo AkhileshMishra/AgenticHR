@@ -1,11 +1,10 @@
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import String, Integer, Boolean, DateTime, Float, ForeignKey, Index, Text, Date
 from sqlalchemy.sql import func
 from datetime import datetime, date
 from typing import Optional
 
-class Base(DeclarativeBase): 
-    pass
+from app.db import Base
 
 class LeaveTypeORM(Base):
     __tablename__ = "leave_types"
