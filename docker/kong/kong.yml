@@ -1,0 +1,547 @@
+_format_version: "3.0"
+_transform: true
+
+services:
+  - name: auth-svc
+    url: http://auth-svc:8000
+    tags:
+      - agentichr
+    routes:
+      - name: auth-routes
+        paths:
+          - /auth
+        strip_path: true
+        methods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+        tags:
+          - auth
+
+  - name: employee-svc
+    url: http://employee-svc:8000
+    tags:
+      - agentichr
+    routes:
+      - name: employee-routes
+        paths:
+          - /employee
+        strip_path: true
+        methods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+        tags:
+          - employee
+
+  - name: iam-gw
+    url: http://iam-gw:8000
+    tags:
+      - agentichr
+    routes:
+      - name: iam-routes
+        paths:
+          - /iam
+        strip_path: true
+        methods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+        tags:
+          - iam
+
+  - name: onboarding-svc
+    url: http://onboarding-svc:8000
+    tags:
+      - agentichr
+    routes:
+      - name: onboarding-routes
+        paths:
+          - /onboarding
+        strip_path: true
+        methods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+        tags:
+          - onboarding
+
+  - name: attendance-svc
+    url: http://attendance-svc:8000
+    tags:
+      - agentichr
+    routes:
+      - name: attendance-routes
+        paths:
+          - /attendance
+        strip_path: true
+        methods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+        tags:
+          - attendance
+
+  - name: leave-svc
+    url: http://leave-svc:8000
+    tags:
+      - agentichr
+    routes:
+      - name: leave-routes
+        paths:
+          - /leave
+        strip_path: true
+        methods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+        tags:
+          - leave
+
+  - name: timesheet-svc
+    url: http://timesheet-svc:8000
+    tags:
+      - agentichr
+    routes:
+      - name: timesheet-routes
+        paths:
+          - /timesheet
+        strip_path: true
+        methods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+        tags:
+          - timesheet
+
+  - name: payroll-svc
+    url: http://payroll-svc:8000
+    tags:
+      - agentichr
+    routes:
+      - name: payroll-routes
+        paths:
+          - /payroll
+        strip_path: true
+        methods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+        tags:
+          - payroll
+
+  - name: recruitment-svc
+    url: http://recruitment-svc:8000
+    tags:
+      - agentichr
+    routes:
+      - name: recruitment-routes
+        paths:
+          - /recruitment
+        strip_path: true
+        methods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+        tags:
+          - recruitment
+
+  - name: docstore-svc
+    url: http://docstore-svc:8000
+    tags:
+      - agentichr
+    routes:
+      - name: docstore-routes
+        paths:
+          - /documents
+        strip_path: true
+        methods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+        tags:
+          - documents
+
+  - name: notify-svc
+    url: http://notify-svc:8000
+    tags:
+      - agentichr
+    routes:
+      - name: notify-routes
+        paths:
+          - /notifications
+        strip_path: true
+        methods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+        tags:
+          - notifications
+
+  - name: search-svc
+    url: http://search-svc:8000
+    tags:
+      - agentichr
+    routes:
+      - name: search-routes
+        paths:
+          - /search
+        strip_path: true
+        methods:
+          - GET
+          - POST
+        tags:
+          - search
+
+  - name: analytics-svc
+    url: http://analytics-svc:8000
+    tags:
+      - agentichr
+    routes:
+      - name: analytics-routes
+        paths:
+          - /analytics
+        strip_path: true
+        methods:
+          - GET
+          - POST
+        tags:
+          - analytics
+
+  - name: agents-gw
+    url: http://agents-gw:8000
+    tags:
+      - agentichr
+    routes:
+      - name: agents-routes
+        paths:
+          - /agents
+        strip_path: true
+        methods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+        tags:
+          - agents
+
+plugins:
+  # Global CORS plugin
+  - name: cors
+    config:
+      origins:
+        - "http://localhost:3000"
+        - "http://localhost:8080"
+        - "https://*.agentichr.local"
+      methods:
+        - GET
+        - POST
+        - PUT
+        - DELETE
+        - OPTIONS
+      headers:
+        - Accept
+        - Accept-Version
+        - Content-Length
+        - Content-MD5
+        - Content-Type
+        - Date
+        - Authorization
+        - X-Auth-Token
+        - X-Tenant-Id
+        - X-Request-Id
+      exposed_headers:
+        - X-Auth-Token
+        - X-Request-Id
+      credentials: true
+      max_age: 3600
+
+  # Global rate limiting
+  - name: rate-limiting
+    config:
+      minute: 60
+      hour: 1000
+      policy: local
+      fault_tolerant: true
+      hide_client_headers: false
+
+  # Request/Response logging
+  - name: http-log
+    config:
+      http_endpoint: http://loki:3100/loki/api/v1/push
+      method: POST
+      timeout: 1000
+      keepalive: 1000
+
+  # JWT Authentication for protected routes
+  - name: jwt
+    route: employee-routes
+    config:
+      uri_param_names:
+        - jwt
+      cookie_names:
+        - jwt
+      header_names:
+        - authorization
+      claims_to_verify:
+        - exp
+        - aud
+        - iss
+      key_claim_name: kid
+      secret_is_base64: false
+      run_on_preflight: true
+
+  - name: jwt
+    route: iam-routes
+    config:
+      uri_param_names:
+        - jwt
+      cookie_names:
+        - jwt
+      header_names:
+        - authorization
+      claims_to_verify:
+        - exp
+        - aud
+        - iss
+      key_claim_name: kid
+      secret_is_base64: false
+      run_on_preflight: true
+
+  - name: jwt
+    route: onboarding-routes
+    config:
+      uri_param_names:
+        - jwt
+      cookie_names:
+        - jwt
+      header_names:
+        - authorization
+      claims_to_verify:
+        - exp
+        - aud
+        - iss
+      key_claim_name: kid
+      secret_is_base64: false
+      run_on_preflight: true
+
+  - name: jwt
+    route: attendance-routes
+    config:
+      uri_param_names:
+        - jwt
+      cookie_names:
+        - jwt
+      header_names:
+        - authorization
+      claims_to_verify:
+        - exp
+        - aud
+        - iss
+      key_claim_name: kid
+      secret_is_base64: false
+      run_on_preflight: true
+
+  - name: jwt
+    route: leave-routes
+    config:
+      uri_param_names:
+        - jwt
+      cookie_names:
+        - jwt
+      header_names:
+        - authorization
+      claims_to_verify:
+        - exp
+        - aud
+        - iss
+      key_claim_name: kid
+      secret_is_base64: false
+      run_on_preflight: true
+
+  - name: jwt
+    route: timesheet-routes
+    config:
+      uri_param_names:
+        - jwt
+      cookie_names:
+        - jwt
+      header_names:
+        - authorization
+      claims_to_verify:
+        - exp
+        - aud
+        - iss
+      key_claim_name: kid
+      secret_is_base64: false
+      run_on_preflight: true
+
+  - name: jwt
+    route: payroll-routes
+    config:
+      uri_param_names:
+        - jwt
+      cookie_names:
+        - jwt
+      header_names:
+        - authorization
+      claims_to_verify:
+        - exp
+        - aud
+        - iss
+      key_claim_name: kid
+      secret_is_base64: false
+      run_on_preflight: true
+
+  - name: jwt
+    route: recruitment-routes
+    config:
+      uri_param_names:
+        - jwt
+      cookie_names:
+        - jwt
+      header_names:
+        - authorization
+      claims_to_verify:
+        - exp
+        - aud
+        - iss
+      key_claim_name: kid
+      secret_is_base64: false
+      run_on_preflight: true
+
+  - name: jwt
+    route: docstore-routes
+    config:
+      uri_param_names:
+        - jwt
+      cookie_names:
+        - jwt
+      header_names:
+        - authorization
+      claims_to_verify:
+        - exp
+        - aud
+        - iss
+      key_claim_name: kid
+      secret_is_base64: false
+      run_on_preflight: true
+
+  - name: jwt
+    route: notify-routes
+    config:
+      uri_param_names:
+        - jwt
+      cookie_names:
+        - jwt
+      header_names:
+        - authorization
+      claims_to_verify:
+        - exp
+        - aud
+        - iss
+      key_claim_name: kid
+      secret_is_base64: false
+      run_on_preflight: true
+
+  - name: jwt
+    route: search-routes
+    config:
+      uri_param_names:
+        - jwt
+      cookie_names:
+        - jwt
+      header_names:
+        - authorization
+      claims_to_verify:
+        - exp
+        - aud
+        - iss
+      key_claim_name: kid
+      secret_is_base64: false
+      run_on_preflight: true
+
+  - name: jwt
+    route: analytics-routes
+    config:
+      uri_param_names:
+        - jwt
+      cookie_names:
+        - jwt
+      header_names:
+        - authorization
+      claims_to_verify:
+        - exp
+        - aud
+        - iss
+      key_claim_name: kid
+      secret_is_base64: false
+      run_on_preflight: true
+
+  - name: jwt
+    route: agents-routes
+    config:
+      uri_param_names:
+        - jwt
+      cookie_names:
+        - jwt
+      header_names:
+        - authorization
+      claims_to_verify:
+        - exp
+        - aud
+        - iss
+      key_claim_name: kid
+      secret_is_base64: false
+      run_on_preflight: true
+
+consumers:
+  - username: agentichr-system
+    custom_id: system
+    tags:
+      - system
+
+  - username: agentichr-agents
+    custom_id: agents
+    tags:
+      - agents
+
+jwt_secrets:
+  - consumer: agentichr-system
+    key: agentichr-gw
+    algorithm: RS256
+    rsa_public_key: |
+      -----BEGIN PUBLIC KEY-----
+      MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4f5wg5l2hKsTeNem/V41
+      fGnJm6gOdrj8ym3rFkEjWT2btf+FxKaGu4M9vSMGt+Q9iSEgxvHPiC5c6tVtaOgn
+      b4tqvxhrdeW2Yk3tZestkmQhbTwkF6BQAhXIMiizVnyLfAaFdcaKdqS1h3/jhHQx
+      qHoS6RZgPdm9N4LLjNJ/lRwHxDaQP54MdveO7Qgk1ZcQTnDw5OgLIxVmsLMZGJvq
+      4EBdw2ExQywa2NzHRrrPa7SmPJXjBKBXjGqiWiMuLwiBqfDeUzUjl7P8q/1x2R4o
+      hzK6X8gMGRkqUBHjZOssgfpPsdVDAzvnpfmcuuiRe1WjQeB2tSYoP8vQQH6YQwID
+      AQAB
+      -----END PUBLIC KEY-----
+
+  - consumer: agentichr-agents
+    key: agentichr-agents
+    algorithm: RS256
+    rsa_public_key: |
+      -----BEGIN PUBLIC KEY-----
+      MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4f5wg5l2hKsTeNem/V41
+      fGnJm6gOdrj8ym3rFkEjWT2btf+FxKaGu4M9vSMGt+Q9iSEgxvHPiC5c6tVtaOgn
+      b4tqvxhrdeW2Yk3tZestkmQhbTwkF6BQAhXIMiizVnyLfAaFdcaKdqS1h3/jhHQx
+      qHoS6RZgPdm9N4LLjNJ/lRwHxDaQP54MdveO7Qgk1ZcQTnDw5OgLIxVmsLMZGJvq
+      4EBdw2ExQywa2NzHRrrPa7SmPJXjBKBXjGqiWiMuLwiBqfDeUzUjl7P8q/1x2R4o
+      hzK6X8gMGRkqUBHjZOssgfpPsdVDAzvnpfmcuuiRe1WjQeB2tSYoP8vQQH6YQwID
+      AQAB
+      -----END PUBLIC KEY-----
