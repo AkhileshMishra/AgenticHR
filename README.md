@@ -45,7 +45,7 @@ AgenticHR is a comprehensive HR management platform built as a microservices arc
 - **Search**: Meilisearch (dev) / OpenSearch (prod)
 - **Storage**: MinIO (S3-compatible)
 - **Auth**: Keycloak (OIDC/OAuth2) with TOTP + WebAuthn
-- **Gateway**: Kong with declarative configuration
+- **Gateway**: Kong with thin routing (JWT verified in services)
 - **Observability**: OpenTelemetry + Prometheus/Grafana + Loki
 
 ## Quick Start
@@ -84,6 +84,22 @@ AgenticHR is a comprehensive HR management platform built as a microservices arc
 - **Auth Service**: http://localhost:9001
 - **Employee Service**: http://localhost:9002
 - **MinIO Console**: http://localhost:9090 (minio/minio123)
+
+### Authentication Model
+
+**Current Implementation**: JWT verification happens inside each service via `libs/py-hrms-auth`. Kong provides thin routing, CORS, and rate limiting only.
+
+**Routes Available**:
+- `/auth/*` → auth-svc (authentication, MFA, sessions)
+- `/employee/*` → employee-svc (employee CRUD operations)
+
+**JWT Flow**:
+1. Client authenticates with Keycloak via auth-svc
+2. Keycloak issues JWT token
+3. Client includes JWT in Authorization header
+4. Kong routes request to appropriate service
+5. Service validates JWT using py-hrms-auth library
+6. Service processes request if JWT is valid
 
 ## Development Workflow
 

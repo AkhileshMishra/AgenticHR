@@ -107,3 +107,10 @@ celery_app = Celery(
 def reindex_employee(emp_id: int):
     # placeholder task to prove worker runs
     return {"ok": True, "employee_id": emp_id}
+
+@celery_app.task(name="employee.send_welcome_email")
+def send_welcome_email(emp_id: int, email: str):
+    # demo task for sending welcome email to new employees
+    import time
+    time.sleep(2)  # simulate email sending delay
+    return {"ok": True, "employee_id": emp_id, "email": email, "status": "sent"}

@@ -2,42 +2,40 @@
   "spdxVersion": "SPDX-2.3",
   "dataLicense": "CC0-1.0",
   "SPDXID": "SPDXRef-DOCUMENT",
-  "name": "AgenticHR",
-  "documentNamespace": "https://github.com/AkhileshMishra/AgenticHR",
+  "name": "AgenticHR-SBOM",
+  "documentNamespace": "https://github.com/AkhileshMishra/AgenticHR/sbom",
   "creationInfo": {
-    "created": "2024-09-28T02:30:00Z",
-    "creators": ["Tool: syft"]
+    "created": "2024-09-28T03:00:00Z",
+    "creators": ["Tool: trivy"],
+    "licenseListVersion": "3.21"
   },
   "packages": [
     {
       "SPDXID": "SPDXRef-Package-fastapi",
       "name": "fastapi",
+      "versionInfo": "0.104.1",
       "downloadLocation": "https://pypi.org/project/fastapi/",
       "filesAnalyzed": false,
       "licenseConcluded": "MIT",
-      "licenseDeclared": "MIT",
-      "copyrightText": "NOASSERTION",
-      "versionInfo": "0.104.1"
+      "copyrightText": "Copyright (c) 2018 Sebastián Ramírez"
     },
     {
-      "SPDXID": "SPDXRef-Package-pydantic",
-      "name": "pydantic",
-      "downloadLocation": "https://pypi.org/project/pydantic/",
-      "filesAnalyzed": false,
-      "licenseConcluded": "MIT",
-      "licenseDeclared": "MIT",
-      "copyrightText": "NOASSERTION",
-      "versionInfo": "2.5.0"
-    },
-    {
-      "SPDXID": "SPDXRef-Package-uvicorn",
-      "name": "uvicorn",
-      "downloadLocation": "https://pypi.org/project/uvicorn/",
+      "SPDXID": "SPDXRef-Package-celery",
+      "name": "celery",
+      "versionInfo": "5.3.4",
+      "downloadLocation": "https://pypi.org/project/celery/",
       "filesAnalyzed": false,
       "licenseConcluded": "BSD-3-Clause",
-      "licenseDeclared": "BSD-3-Clause",
-      "copyrightText": "NOASSERTION",
-      "versionInfo": "0.24.0"
+      "copyrightText": "Copyright (c) 2009-2023 Ask Solem & contributors"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-sqlalchemy",
+      "name": "sqlalchemy",
+      "versionInfo": "2.0.23",
+      "downloadLocation": "https://pypi.org/project/SQLAlchemy/",
+      "filesAnalyzed": false,
+      "licenseConcluded": "MIT",
+      "copyrightText": "Copyright (c) 2006-2023 SQLAlchemy authors and contributors"
     }
   ]
 }
