@@ -179,3 +179,49 @@ certs.generate: ## Generate development certificates
 	@mkdir -p certs
 	@openssl req -x509 -newkey rsa:4096 -keyout certs/key.pem -out certs/cert.pem -days 365 -nodes -subj "/CN=localhost"
 	@echo "✅ Development certificates generated in certs/"
+# Additional Makefile targets for Kong JWT configuration
+
+.PHONY: kong.validate kong.test-config kong.check-jwt
+
+kong.validate: ## Validate Kong configuration
+	@echo "Validating Kong configuration..."
+	@python3 -c "import yaml; yaml.safe_load(open('docker/kong/kong.yml')); print('✅ Kong YAML is valid')"
+	@echo "Checking Kong configuration completeness..."
+	@python3 -c "import yaml; config = yaml.safe_load(open('docker/kong/kong.yml')); \
+		services = config.get('services', []); \
+		plugins = config.get('plugins', []); \
+		consumers = config.get('consumers', []); \
+		jwt_secrets = config.get('jwt_secrets', []); \
+		print(f'Services: {len(services)}'); \
+		print(f'Plugins: {len(plugins)}'); \
+		print(f'Consumers: {len(consumers)}'); \
+		print(f'JWT Secrets: {len(jwt_secrets)}'); \
+		assert len(services) >= 2, 'At least 2 services required'; \
+		assert len(plugins) >= 3, 'At least 3 plugins required (CORS, Rate Limiting, JWT)'; \
+		assert len(consumers) >= 1, 'At least 1 consumer required'; \
+		assert len(jwt_secrets) >= 1, 'At least 1 JWT secret required'; \
+		print('✅ Kong configuration is complete')"
+
+kong.test-config: ## Test Kong configuration with docker-compose config
+	@echo "Testing Kong configuration with Docker Compose..."
+	@docker compose -f docker/compose.dev.yml config kong >/dev/null 2>&1 && echo "✅ Kong service configuration is valid" || echo "❌ Kong service configuration has issues"
+
+kong.check-jwt: ## Check JWT configuration alignment between Kong and Keycloak
+	@echo "Checking JWT configuration alignment..."
+	@python3 -c "import yaml, json; \
+		kong_config = yaml.safe_load(open('docker/kong/kong.yml')); \
+		keycloak_config = json.load(open('docker/keycloak/realm-export.json')); \
+		jwt_secret = kong_config['jwt_secrets'][0]; \
+		realm_name = keycloak_config['realm']; \
+		expected_issuer = f'http://keycloak:8080/realms/{realm_name}'; \
+		actual_key = jwt_secret['key']; \
+		print(f'Expected issuer: {expected_issuer}'); \
+		print(f'Kong consumer key: {actual_key}'); \
+		assert actual_key == expected_issuer, f'Issuer mismatch: {actual_key} != {expected_issuer}'; \
+		print('✅ JWT configuration is aligned between Kong and Keycloak')"
+
+# Add to existing help target
+help-kong: ## Show Kong-specific help
+	@echo "Kong JWT Configuration Commands:"
+	@echo "================================"
+	@grep -E '^kong\.[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'

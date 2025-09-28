@@ -27,7 +27,6 @@
   "actionTokenGeneratedByUserLifespan": 300,
   "oauth2DeviceCodeLifespan": 600,
   "oauth2DevicePollingInterval": 5,
-  "enabled": true,
   "sslRequired": "external",
   "registrationAllowed": false,
   "registrationEmailAsUsername": false,
@@ -421,72 +420,30 @@
   "identityProviders": [],
   "identityProviderMappers": [],
   "components": {
-    "org.keycloak.services.clientregistration.policy.ClientRegistrationPolicy": [
+    "org.keycloak.keys.KeyProvider": [
       {
-        "name": "Trusted Hosts",
-        "providerId": "trusted-hosts",
-        "subType": "anonymous",
+        "id": "rsa-generated",
+        "name": "rsa-generated",
+        "providerId": "rsa-generated",
         "subComponents": {},
         "config": {
-          "host-sending-registration-request-must-match": [
+          "priority": [
+            "100"
+          ],
+          "enabled": [
             "true"
           ],
-          "client-uris-must-be-non-wildcard": [
+          "active": [
             "true"
-          ]
-        }
-      },
-      {
-        "name": "Consent Required",
-        "providerId": "consent-required",
-        "subType": "anonymous",
-        "subComponents": {},
-        "config": {}
-      },
-      {
-        "name": "Full Scope Disabled",
-        "providerId": "scope",
-        "subType": "anonymous",
-        "subComponents": {},
-        "config": {}
-      },
-      {
-        "name": "Max Clients Limit",
-        "providerId": "max-clients",
-        "subType": "anonymous",
-        "subComponents": {},
-        "config": {
-          "max-clients": [
-            "200"
-          ]
-        }
-      },
-      {
-        "name": "Allowed Protocol Mapper Types",
-        "providerId": "allowed-protocol-mappers",
-        "subType": "anonymous",
-        "subComponents": {},
-        "config": {
-          "allowed-protocol-mapper-types": [
-            "oidc-full-name-mapper",
-            "saml-user-property-mapper",
-            "oidc-address-mapper",
-            "oidc-usermodel-property-mapper",
-            "saml-role-list-mapper",
-            "saml-user-attribute-mapper",
-            "oidc-usermodel-attribute-mapper",
-            "oidc-sha256-pairwise-sub-mapper"
-          ]
-        }
-      },
-      {
-        "name": "Allowed Client Scopes",
-        "providerId": "allowed-client-templates",
-        "subType": "anonymous",
-        "subComponents": {},
-        "config": {
-          "allow-default-scopes": [
-            "true"
+          ],
+          "algorithm": [
+            "RS256"
+          ],
+          "keySize": [
+            "2048"
+          ],
+          "privateKey": [
+            "MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCVJliWqa1j2m3WQFod4F15fCPo+pwPKbORxUzg9zKK2kBbhO06BoIGjChJqkfzxaQ2EA/eBRFiT7THDcjeVC0FsQEp2CO8ZnH7k9vQdwsXSWP23Rzz7Gsfd5heXxxenqO8jWROMLWn8kBcyfG0096M+jpGW3X5KB4FMI/nEQ0vbk8DRbl3SFmFwEVYPZVNGRnKL6ENql9rLI80YH4abwhAGy0bmhy4QJJOT6ddcXdIst/CPXBQ2Ocojn++K4XLnaU0ObqU+GVk3Upn+vS4HZsH3WZgEJFOSYXnFsJAVgRdvyjY/NJQAxCmMEheUe3qoJlGcpnZae+pTwoPQfRCFs59AgMBAAECggEAM08tQ6tciFDg30dlGQkR7xSLP/9Sx46XhUrEH1I683SQlktc1szdV0ZJJ8pqFU0FKEoPQ1gn+lOkQ6QU2ZNIp8AUP+JorMvrY1oi0Qza5mhreMXpS2qmEX2xj6mVl2Fov5k+i/2KyJt4k9MvEP+f/IyqloCpTY0FAtEJeDqv+AQqauJpqTamLVAWGQn9Vpt/4G5PxhelxpFHZuZGhPRA7IQiwHpzGE0Qdlx9Ie08/MqlKsbhqJEj7BW+uM73K56ck8h7P2rSfWWvY+f+M3EBSUdxErxXEkk7aAy05TvMt0J9JlH46r90VswuekjSiRZlKYs3QAJD5nxitdqU/Hl5SwKBgQC2Tw/95GrcCxwEgJHI/8kTuhnSvm2VSWJW/EP4Nddkxk2p9UUgCqGeLVSiHxxR4+4c/vlPX94VU7UtUsB6hWJlMeOx52GZsiIxKKyI354/P5M5UJ6vSGW2H0iyDSPhI3KcXrPiIhBGxurMnYAJjqGQ+1z/1rBOWodPua6UCV1ZKwKBgQDRcA32QnbCOivxwTdIMXvZB8nRMGYPZkxv3fsFhLnopuXTWmoLL9MkntOXSM8TNtewkr8XOOF4W83/alCJVaR0slit4WUEabkbt0bnNflC4MeNSOJZT0FuDshYxPA5NcE4ctLLWP73Mp2TnaC+qB6kMJ+U/UB+BoVEEjcxkGJS9wKBgEs0hDlNL9PD9XPaAcmz0qQDokFwcs4hrqKJgBR1SXx13XXeCvzzxcX1lzMluE4Dw6dMe1YGCxwrItMmjuY7/eIW2YH7HCUF+drjl4EDFkmrFTWQj1VpfSPK9fcVOpbWQ6JD4trHCIXZ6uQrmLTYlMe1GaEkVCiOacE2rNC+qDZvAoGAA+vQJxspdAt4xSbz7QMYKYEO0z7PulwU9Ec4qurIPEXbqbBYqer0Tgw3M+7mCZsOQL0OnNWwyvsVCUIpTdjvokuwg1jj9kgwcgdlaXDGQO1Kbye9LSThubjHIXpWcQvDmVX1Al+hLmmhL6FU4Bzvre1HH5f6PCHNHvAkXmYwoRMCgYAwodDGlrugxgwb0yaG7YbWGrMm3LH7wg36Q+lZ0azs3GgcDb9Pz8Q84EKQFnUrbfMK2ozfmWaMNq1gD05Bss9MIW5/jVPF/jgXK3gOG7K21B9O4HJXCAa/zqbM9So+54FkTVHYRLt6DLt8GHZFV0cq3JfHUnd+bcZuuGLhf3W6QQ=="
           ]
         }
       }

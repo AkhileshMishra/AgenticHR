@@ -198,7 +198,7 @@ MOCK_EMPLOYEES = {
         employee_id="EMP001",
         first_name="Jane",
         last_name="Smith",
-        email="jane.smith@agentichr.local",
+        email="jane.smith@example.com",
         phone="+1-555-0101",
         date_of_birth=date(1990, 5, 15),
         gender=Gender.FEMALE,
@@ -233,7 +233,7 @@ MOCK_EMPLOYEES = {
         employee_id="EMP002",
         first_name="John",
         last_name="Doe",
-        email="john.doe@agentichr.local",
+        email="john.doe@example.com",
         phone="+1-555-0201",
         date_of_birth=date(1985, 8, 22),
         gender=Gender.MALE,
@@ -268,7 +268,7 @@ async def list_employees(
     department_id: Optional[str] = Query(None, description="Filter by department"),
     status: Optional[EmploymentStatus] = Query(None, description="Filter by status"),
     search: Optional[str] = Query(None, description="Search by name or email"),
-    auth: AuthContext = Depends(RequireEmployeeManager)
+    auth: AuthContext = RequireEmployeeManager
 ):
     """List employees with pagination and filtering."""
     logger.info(
@@ -317,7 +317,7 @@ async def list_employees(
 @app.get("/v1/employees/{employee_id}", response_model=Employee)
 async def get_employee(
     employee_id: str,
-    auth: AuthContext = Depends(RequireEmployeeSelf)
+    auth: AuthContext = RequireEmployeeSelf
 ):
     """Get employee by ID."""
     logger.info("Getting employee", employee_id=employee_id, user_id=auth.user_id)
@@ -344,7 +344,7 @@ async def get_employee(
 @app.post("/v1/employees", response_model=Employee, status_code=status.HTTP_201_CREATED)
 async def create_employee(
     employee_data: EmployeeCreate,
-    auth: AuthContext = Depends(RequireEmployeeManager)
+    auth: AuthContext = RequireEmployeeManager
 ):
     """Create a new employee."""
     logger.info("Creating employee", user_id=auth.user_id, employee_id=employee_data.employee_id)
@@ -376,7 +376,7 @@ async def create_employee(
 async def update_employee(
     employee_id: str,
     employee_data: EmployeeUpdate,
-    auth: AuthContext = Depends(RequireEmployeeManager)
+    auth: AuthContext = RequireEmployeeManager
 ):
     """Update an employee."""
     logger.info("Updating employee", employee_id=employee_id, user_id=auth.user_id)
@@ -402,7 +402,7 @@ async def update_employee(
 @app.delete("/v1/employees/{employee_id}")
 async def delete_employee(
     employee_id: str,
-    auth: AuthContext = Depends(RequireEmployeeManager)
+    auth: AuthContext = RequireEmployeeManager
 ):
     """Delete an employee (soft delete by setting status to terminated)."""
     logger.info("Deleting employee", employee_id=employee_id, user_id=auth.user_id)
@@ -427,7 +427,7 @@ async def delete_employee(
 @app.get("/v1/employees/{employee_id}/profile", response_model=Employee)
 async def get_employee_profile(
     employee_id: str,
-    auth: AuthContext = Depends(RequireEmployeeSelf)
+    auth: AuthContext = RequireEmployeeSelf
 ):
     """Get employee profile (same as get_employee but different endpoint for clarity)."""
     return await get_employee(employee_id, auth)
@@ -437,7 +437,7 @@ async def get_employee_profile(
 async def update_employee_profile(
     employee_id: str,
     profile_data: EmployeeUpdate,
-    auth: AuthContext = Depends(RequireEmployeeSelf)
+    auth: AuthContext = RequireEmployeeSelf
 ):
     """Update employee profile (limited fields for self-service)."""
     logger.info("Updating employee profile", employee_id=employee_id, user_id=auth.user_id)
@@ -482,7 +482,7 @@ async def update_employee_profile(
 @app.get("/v1/employees/{employee_id}/documents")
 async def list_employee_documents(
     employee_id: str,
-    auth: AuthContext = Depends(RequireEmployeeSelf)
+    auth: AuthContext = RequireEmployeeSelf
 ):
     """List employee documents."""
     logger.info("Listing employee documents", employee_id=employee_id, user_id=auth.user_id)
@@ -504,7 +504,7 @@ async def list_employee_documents(
             file_path="/documents/emp001/contract.pdf",
             file_size=1024000,
             mime_type="application/pdf",
-            uploaded_by="hr@agentichr.local",
+            uploaded_by="hr@example.com",
             uploaded_at=datetime.now()
         )
     ]
@@ -514,7 +514,7 @@ async def list_employee_documents(
 
 # Department endpoints
 @app.get("/v1/departments")
-async def list_departments(auth: AuthContext = Depends(RequireEmployeeSelf)):
+async def list_departments(auth: AuthContext = RequireEmployeeSelf):
     """List all departments."""
     logger.info("Listing departments", user_id=auth.user_id)
     
@@ -531,7 +531,7 @@ async def list_departments(auth: AuthContext = Depends(RequireEmployeeSelf)):
 
 # Statistics endpoints
 @app.get("/v1/employees/stats")
-async def get_employee_statistics(auth: AuthContext = Depends(RequireEmployeeManager)):
+async def get_employee_statistics(auth: AuthContext = RequireEmployeeManager):
     """Get employee statistics."""
     logger.info("Getting employee statistics", user_id=auth.user_id)
     
