@@ -57,6 +57,8 @@ AgenticHR is a comprehensive HR management platform built as a microservices arc
 - Poetry (`pipx install poetry`)
 - Make
 
+> **Optional stacks (dev only)**: Temporal, NATS, OpenSearch, Observability stack are brought up by docker-compose for convenience. Services will start without them; they'll be wired in future commits.
+
 ### Development Setup
 
 1. **Bootstrap the development environment**:
@@ -241,10 +243,10 @@ make deploy.status
 
 See `docs/adr/` for architectural decisions and their rationale:
 
-- [ADR-001: Microservices vs Monolith](docs/adr/001-microservices-architecture.md)
-- [ADR-002: Database Strategy](docs/adr/002-database-per-service.md)
-- [ADR-003: Event Bus Selection](docs/adr/003-nats-vs-kafka.md)
-- [ADR-004: Workflow Engine Choice](docs/adr/004-temporal-workflows.md)
+- [ADR-001: Microservices Architecture](docs/adr/001-microservices-architecture.md)
+- [ADR-002: Database Isolation Strategy](docs/adr/002-db-isolation.md)
+- [ADR-003: Event Bus Strategy](docs/adr/003-event-bus.md)
+- [ADR-004: Workflow Management Strategy](docs/adr/004-workflows.md)
 
 ## License
 

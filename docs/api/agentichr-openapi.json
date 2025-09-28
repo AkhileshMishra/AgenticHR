@@ -1,0 +1,29 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "AgenticHR",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/auth/login": {
+      "post": {
+        "summary": "Login"
+      }
+    },
+    "/employee/v1/employees": {
+      "get": {
+        "summary": "List employees"
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "LoginRequest": {
+        "type": "object"
+      },
+      "Employee": {
+        "type": "object"
+      }
+    }
+  }
+}

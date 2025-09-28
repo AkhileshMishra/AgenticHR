@@ -1,0 +1,1 @@
+{"openapi":"3.0.3","info":{"title":"employee-svc"},"paths":{"/employee/v1/employees":{"get":{"summary":"List employees"}}},"components":{"schemas":{"Employee":{"type":"object"}}}}

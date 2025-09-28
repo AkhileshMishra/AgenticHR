@@ -43,6 +43,37 @@ dev.health: ## Check health of all services
 	@echo "Auth Service: $$(curl -s -o /dev/null -w '%{http_code}' http://localhost:9001/health || echo 'DOWN')"
 	@echo "Employee Service: $$(curl -s -o /dev/null -w '%{http_code}' http://localhost:9002/health || echo 'DOWN')"
 
+# API Documentation
+api.bundle: ## Generate merged OpenAPI documentation
+	@mkdir -p docs/api/tmp
+	@echo "📡 Fetching OpenAPI specs from services..."
+	# fetch openapi from services via Kong (or direct ports)
+	@curl -s http://localhost:8000/auth/openapi.json -o docs/api/tmp/auth.json || echo "⚠️ Could not fetch auth service OpenAPI (service may not be running)"
+	@curl -s http://localhost:8000/employee/openapi.json -o docs/api/tmp/employee.json || echo "⚠️ Could not fetch employee service OpenAPI (service may not be running)"
+	@echo "🔗 Merging OpenAPI specifications..."
+	@python3 scripts/merge_openapi.py docs/api/tmp/*.json > docs/api/agentichr-openapi.json
+	@echo "✅ Merged → docs/api/agentichr-openapi.json"
+
+api.postman: api.bundle ## Generate Postman collection from OpenAPI
+	@echo "📮 Generating Postman collection..."
+	@docker run --rm -v $$PWD:/w -w /w node:20-alpine sh -c "\
+	  npm i -g openapi-to-postmanv2 && \
+	  openapi2postmanv2 -s docs/api/agentichr-openapi.json \
+	    -o docs/api/agentichr.postman.json -p"
+	@echo "✅ Postman collection → docs/api/agentichr.postman.json"
+
+# Security Scanning
+security.scan: ## Run security scans and generate SBOM
+	@mkdir -p docs/compliance
+	@echo "🔒 Running filesystem security scan..."
+	# Filesystem scan
+	@docker run --rm -v $$PWD:/work aquasec/trivy fs --exit-code 1 --no-progress /work || true
+	@echo "📋 Generating Software Bill of Materials (SBOM)..."
+	# SBOM (SPDX JSON)
+	@docker run --rm -v $$PWD:/work anchore/syft:latest packages dir:/work \
+	  -o spdx-json=/work/docs/compliance/sbom.spdx.json
+	@echo "✅ SBOM → docs/compliance/sbom.spdx.json"
+
 # Quality Assurance
 qa.all: lint.all typecheck.all test.all ## Run all quality assurance checks
 
@@ -77,23 +108,12 @@ test.employee-svc: ## Run employee service tests
 	@echo "🧪 Testing employee-svc..."
 	@cd services/employee-svc && poetry run pytest -v
 
-# Security
-security.scan: ## Run security scans
-	@echo "🔒 Running security scans..."
+# Security (legacy targets for compatibility)
+security.legacy: ## Run legacy security scans
+	@echo "🔒 Running legacy security scans..."
 	@poetry run bandit -r libs/ services/
 	@poetry run safety check
-	@echo "✅ Security scan complete."
-
-# API Documentation
-api.bundle: ## Generate merged OpenAPI documentation
-	@echo "📚 Generating API documentation..."
-	@mkdir -p docs/api
-	@echo "✅ API documentation generated in docs/api/"
-
-api.postman: ## Generate Postman collection
-	@echo "📮 Generating Postman collection..."
-	@mkdir -p docs/api
-	@echo "✅ Postman collection generated in docs/api/"
+	@echo "✅ Legacy security scan complete."
 
 # Build
 build.all: ## Build all service containers
@@ -114,6 +134,11 @@ db.migrate: ## Run database migrations
 	@echo "🗄️ Running database migrations..."
 	@poetry run alembic upgrade head
 	@echo "✅ Database migrations complete."
+
+db.migrate.employee: ## Run employee service database migrations
+	@echo "🗄️ Running employee service database migrations..."
+	@docker compose -f docker/compose.dev.yml exec employee-svc alembic upgrade head
+	@echo "✅ Employee service database migrations complete."
 
 db.seed: ## Seed database with sample data
 	@echo "🌱 Seeding database with sample data..."
