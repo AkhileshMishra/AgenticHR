@@ -10,6 +10,7 @@ from pathlib import Path
 # Add service paths
 sys.path.append(str(Path(__file__).parent.parent / "services" / "employee-svc"))
 sys.path.append(str(Path(__file__).parent.parent / "services" / "auth-svc"))
+sys.path.append(str(Path(__file__).parent.parent / "libs" / "py-hrms-auth" / "src"))
 
 def test_employee_tasks():
     """Test employee service Celery tasks"""

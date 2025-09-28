@@ -1,5 +1,6 @@
 """AgenticHR Authentication and Authorization Library."""
 
+from .auth_config import AuthN
 from .jwt_dep import (
     AuthContext,
     TokenPayload,
@@ -32,6 +33,7 @@ from .middleware import (
 )
 
 __all__ = [
+    "AuthN",
     "AuthContext",
     "TokenPayload",
     "get_auth_context",

@@ -15,6 +15,7 @@ pydantic = {extras = ["email"], version = "^2.5.0"}
 celery = "^5.3.4"
 redis = "^5.0.1"
 httpx = "^0.25.2"
+py-hrms-auth = {path = "../../libs/py-hrms-auth", develop = true}
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.3"
@@ -36,3 +37,7 @@ ignore = ["E501"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+
+py-hrms-auth @ file:///libs/py-hrms-auth
+

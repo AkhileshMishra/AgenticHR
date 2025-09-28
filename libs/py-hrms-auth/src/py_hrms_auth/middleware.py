@@ -13,7 +13,7 @@ import json
 import hashlib
 from typing import Dict, Any, Optional, List
 from fastapi import Request, Response, HTTPException
-from fastapi.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 import logging
 

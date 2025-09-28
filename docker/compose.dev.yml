@@ -118,8 +118,8 @@ services:
   # --- Application Services ---
   auth-svc:
     build:
-      context: ../services/auth-svc
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: docker/auth-svc.Dockerfile
     container_name: agentichr-auth-svc
     environment:
       - DATABASE_URL=postgresql+asyncpg://hr:hr@postgres:5432/hr
@@ -142,48 +142,72 @@ services:
 
   employee-svc:
     build:
-      context: ../services/employee-svc
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: docker/employee-svc.Dockerfile
     container_name: agentichr-employee-svc
     environment:
       - DATABASE_URL=postgresql+asyncpg://hr:hr@postgres:5432/hr
       - REDIS_URL=redis://redis:6379/0
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672//
+      - OIDC_ISSUER=http://keycloak:8080/realms/agentichr
+      - JWKS_URL=http://keycloak:8080/realms/agentichr/protocol/openid-connect/certs
+      - OIDC_AUDIENCE=agentichr-gw
     ports:
       - "9002:8000"
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      keycloak:
         condition: service_healthy
     networks:
       - agentichr
 
   attendance-svc:
     build:
-      context: ../services/attendance-svc
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: docker/attendance-svc.Dockerfile
     container_name: agentichr-attendance-svc
     environment:
       - DATABASE_URL=postgresql+asyncpg://hr:hr@postgres:5432/hr
+      - REDIS_URL=redis://redis:6379/0
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672//
+      - OIDC_ISSUER=http://keycloak:8080/realms/agentichr
+      - JWKS_URL=http://keycloak:8080/realms/agentichr/protocol/openid-connect/certs
+      - OIDC_AUDIENCE=agentichr-gw
     ports:
       - "9004:8000"
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      keycloak:
         condition: service_healthy
     networks:
       - agentichr
 
   leave-svc:
     build:
-      context: ../services/leave-svc
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: docker/leave-svc.Dockerfile
     container_name: agentichr-leave-svc
     environment:
       - DATABASE_URL=postgresql+asyncpg://hr:hr@postgres:5432/hr
+      - REDIS_URL=redis://redis:6379/0
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672//
+      - OIDC_ISSUER=http://keycloak:8080/realms/agentichr
+      - JWKS_URL=http://keycloak:8080/realms/agentichr/protocol/openid-connect/certs
+      - OIDC_AUDIENCE=agentichr-gw
     ports:
       - "9005:8000"
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      keycloak:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
@@ -210,28 +234,68 @@ services:
   # --- Workers ---
   auth-worker:
     build:
-      context: ../services/auth-svc
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: docker/auth-svc.Dockerfile
     container_name: agentichr-auth-worker
     command: celery -A app.main.celery_app worker -l info
     environment:
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672//
+      - REDIS_URL=redis://redis:6379/0
     depends_on:
       rabbitmq:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - agentichr
 
   employee-worker:
     build:
-      context: ../services/employee-svc
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: docker/employee-svc.Dockerfile
     container_name: agentichr-employee-worker
     command: celery -A app.main.celery_app worker -l info
     environment:
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672//
+      - REDIS_URL=redis://redis:6379/0
     depends_on:
       rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - agentichr
+
+  attendance-worker:
+    build:
+      context: ..
+      dockerfile: docker/attendance-svc.Dockerfile
+    container_name: agentichr-attendance-worker
+    command: celery -A app.main.celery_app worker -l info
+    environment:
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672//
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - agentichr
+
+  leave-worker:
+    build:
+      context: ..
+      dockerfile: docker/leave-svc.Dockerfile
+    container_name: agentichr-leave-worker
+    command: celery -A app.main.celery_app worker -l info
+    environment:
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672//
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - agentichr

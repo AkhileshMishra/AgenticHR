@@ -11,7 +11,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, EmailStr
 from celery import Celery
 
-from py_hrms_auth import AuthContext, get_auth_context
+from py_hrms_auth import AuthContext, get_auth_context, AuthN
+from py_hrms_auth.jwt_dep import JWKS_URL, OIDC_AUDIENCE, ISSUER
 
 # Configure structured logging
 structlog.configure(
@@ -38,7 +39,7 @@ logger = structlog.get_logger(__name__)
 celery_app = Celery(
     "auth-svc",
     broker=os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672//"),
-    backend=os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/1")
+    backend=os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
 )
 
 @asynccontextmanager
@@ -54,6 +55,9 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan
 )
+
+AuthN(app, jwks_url=JWKS_URL, audience=OIDC_AUDIENCE, issuer=ISSUER)
+
 
 # Add CORS middleware
 app.add_middleware(
@@ -105,4 +109,10 @@ def cleanup_expired_sessions():
     logger.info("Cleaning up expired sessions")
     # In a real implementation, this would query the session store and remove expired sessions
     print("Expired sessions cleaned up")
+
+
+
+from py_hrms_auth.middleware import SecurityHeadersMiddleware
+
+app.add_middleware(SecurityHeadersMiddleware)
 

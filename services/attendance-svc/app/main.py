@@ -15,7 +15,15 @@ from celery import Celery
 
 from app.db import get_db, init_db
 from app.models import ShiftORM, AttendanceSummaryORM
-from py_hrms_auth import get_auth_context, require_roles, AuthContext
+from fastapi.middleware.cors import CORSMiddleware
+from py_hrms_auth import (
+    get_auth_context, 
+    require_roles,
+    AuthContext,
+    AuthN
+)
+from py_hrms_auth.jwt_dep import JWKS_URL, OIDC_AUDIENCE, ISSUER
+from py_hrms_auth.middleware import SecurityHeadersMiddleware
 
 # Configure structured logging
 structlog.configure(
@@ -55,6 +63,18 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan
 )
+
+AuthN(app, jwks_url=JWKS_URL, audience=OIDC_AUDIENCE, issuer=ISSUER)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+app.add_middleware(SecurityHeadersMiddleware)
+
 
 class CheckInRequest(BaseModel):
     employee_id: int

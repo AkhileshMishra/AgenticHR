@@ -7,22 +7,22 @@ ENV PYTHONDONTWRITEBYTECODE=1
 # Set work directory
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies and Poetry
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential \
         curl \
+    && pip install poetry \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy and install shared libraries first (for better caching)
-COPY ../../libs/ /libs/
-RUN pip install --no-cache-dir /libs/py-hrms-auth
+# Copy the entire monorepo into the container
+COPY ../../pyproject.toml /app/pyproject.toml
+COPY ../../poetry.lock /app/poetry.lock
+COPY ../../libs /app/libs
+COPY services/leave-svc /app/services/leave-svc
 
-# Copy service files
-COPY . .
-
-# Install service dependencies
-RUN pip install --no-cache-dir .
+# Install shared libraries and service dependencies using poetry
+RUN cd /app && poetry install --no-root --no-directory --sync
 
 # Create non-root user
 RUN adduser --disabled-password --gecos '' appuser && chown -R appuser /app
@@ -37,3 +37,4 @@ HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
 
 # Run the application
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+

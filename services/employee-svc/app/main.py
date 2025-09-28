@@ -17,8 +17,10 @@ from app.models import EmployeeORM
 from py_hrms_auth import (
     get_auth_context, 
     require_roles,
-    AuthContext
+    AuthContext,
+    AuthN
 )
+from py_hrms_auth.jwt_dep import JWKS_URL, OIDC_AUDIENCE, ISSUER
 
 # Configure structured logging
 structlog.configure(
@@ -41,7 +43,7 @@ logger = structlog.get_logger(__name__)
 celery_app = Celery(
     "employee-svc",
     broker=os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672//"),
-    backend=os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/2")
+    backend=os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
 )
 
 @asynccontextmanager
@@ -58,6 +60,9 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan
 )
+
+AuthN(app, jwks_url=JWKS_URL, audience=OIDC_AUDIENCE, issuer=ISSUER)
+
 
 class EmployeeIn(BaseModel):
     full_name: str
@@ -198,4 +203,10 @@ def reindex_employee(employee_id: int):
     logger.info("Reindexing employee", employee_id=employee_id)
     # In a real implementation, this would call an external search service
     print(f"Employee {employee_id} reindexed")
+
+
+
+from py_hrms_auth.middleware import SecurityHeadersMiddleware
+
+app.add_middleware(SecurityHeadersMiddleware)
 
