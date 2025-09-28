@@ -346,6 +346,89 @@ services:
     networks:
       - agentichr
 
+  # --- AI Agents Gateway ---
+  agents-gateway:
+    build:
+      context: ../services/agents-gateway
+      dockerfile: Dockerfile
+    container_name: agentichr-agents-gateway
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://agentichr:agentichr123@postgres:5432/agentichr
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - ENVIRONMENT=development
+      - REDIS_URL=redis://redis:6379/0
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672//
+    ports:
+      - "9003:9003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - agentichr
+
+  # --- Temporal Workflow Engine ---
+  temporal:
+    image: temporalio/auto-setup:1.22.0
+    container_name: agentichr-temporal
+    environment:
+      - DB=postgresql
+      - DB_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-hr}
+      - POSTGRES_PWD=${POSTGRES_PASSWORD:-hr}
+      - POSTGRES_SEEDS=postgres
+      - DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/development-sql.yaml
+    ports:
+      - "7233:7233"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - temporal_data:/etc/temporal
+    networks:
+      - agentichr
+
+  # Temporal Web UI
+  temporal-web:
+    image: temporalio/web:2.21.3
+    container_name: agentichr-temporal-web
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CORS_ORIGINS=http://localhost:3000
+    ports:
+      - "8088:8088"
+    depends_on:
+      - temporal
+    networks:
+      - agentichr
+
+  # Workflow Worker
+  workflow-worker:
+    build:
+      context: ../workflows
+      dockerfile: Dockerfile
+    container_name: agentichr-workflow-worker
+    command: python worker.py
+    environment:
+      - TEMPORAL_HOST=temporal:7233
+      - TEMPORAL_NAMESPACE=agentichr
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672//
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-hr}
+      - POSTGRES_USER=${POSTGRES_USER:-hr}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-hr}
+      - INTERNAL_API_BASE=http://kong:8000
+    depends_on:
+      - temporal
+      - rabbitmq
+      - postgres
+    restart: unless-stopped
+    networks:
+      - agentichr
+
 volumes:
   postgres_data:
   redis_data:
@@ -356,6 +439,7 @@ volumes:
   prometheus_data:
   grafana_data:
   loki_data:
+  temporal_data:
 
 networks:
   agentichr:

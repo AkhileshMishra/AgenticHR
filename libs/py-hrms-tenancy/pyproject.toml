@@ -1,0 +1,30 @@
+[tool.poetry]
+name = "py-hrms-tenancy"
+version = "0.1.0"
+description = "Multi-tenancy library for AgenticHR services"
+authors = ["AgenticHR Team"]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+sqlalchemy = "^2.0.23"
+asyncpg = "^0.29.0"
+fastapi = "^0.104.1"
+pydantic = "^2.5.0"
+alembic = "^1.13.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.3"
+pytest-asyncio = "^0.21.1"
+ruff = "^0.1.6"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+ignore = ["E501"]

@@ -18,6 +18,19 @@ from .jwt_dep import (
     RequireAgentPayrollProcessor,
 )
 
+from .rbac import (
+    Permission, Role, AccessContext, 
+    require_permission, require_any_permission, 
+    require_resource_access, require_role,
+    audit_log, create_access_context
+)
+
+from .middleware import (
+    RateLimitMiddleware, SecurityHeadersMiddleware,
+    RequestValidationMiddleware, IPFilterMiddleware,
+    RequestLoggingMiddleware, CORSSecurityMiddleware
+)
+
 __all__ = [
     "AuthContext",
     "TokenPayload",
@@ -34,6 +47,13 @@ __all__ = [
     "RequireAgentLeaveRequester",
     "RequireAgentTimesheetApprover",
     "RequireAgentPayrollProcessor",
+    "Permission", "Role", "AccessContext",
+    "require_permission", "require_any_permission", 
+    "require_resource_access", "require_role",
+    "audit_log", "create_access_context",
+    "RateLimitMiddleware", "SecurityHeadersMiddleware",
+    "RequestValidationMiddleware", "IPFilterMiddleware",
+    "RequestLoggingMiddleware", "CORSSecurityMiddleware"
 ]
 
 __version__ = "0.1.0"
