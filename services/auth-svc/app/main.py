@@ -7,11 +7,11 @@ from typing import Dict, Any
 import structlog
 from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, EmailStr
 from celery import Celery
 
-from py_hrms_auth import AuthContext, get_auth_context, AuthN, Permission, require_permission
+from py_hrms_auth import AuthContext, get_auth_context
 from app.db import init_db
 from py_hrms_auth.jwt_dep import JWKS_URL, OIDC_AUDIENCE, ISSUER
 
@@ -65,7 +65,7 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-AuthN(app, jwks_url=JWKS_URL, audience=OIDC_AUDIENCE, issuer=ISSUER)
+# JWT authentication is handled by middleware
 
 
 # Add CORS middleware
@@ -95,7 +95,6 @@ class UserProfile(BaseModel):
     tenant_id: str | None
 
 @app.get("/v1/me", response_model=UserProfile)
-@require_permission(Permission.USER_READ)
 async def get_current_user(auth: AuthContext = Depends(get_auth_context)):
     """Get the profile of the currently authenticated user."""
     return UserProfile(

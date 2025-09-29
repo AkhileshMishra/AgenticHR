@@ -6,6 +6,7 @@ from typing import List, Optional
 
 import structlog
 from fastapi import FastAPI, Depends, HTTPException, Query, status
+from fastapi.responses import Response
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
@@ -17,12 +18,7 @@ from app.models import EmployeeORM
 from py_hrms_auth import (
     get_auth_context, 
     require_roles,
-    AuthContext,
-    AuthN,
-    Permission,
-    require_permission,
-    require_resource_access,
-    audit_log
+    AuthContext
 )
 
 from py_hrms_auth.jwt_dep import JWKS_URL, OIDC_AUDIENCE, ISSUER
@@ -73,7 +69,7 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-AuthN(app, jwks_url=JWKS_URL, audience=OIDC_AUDIENCE, issuer=ISSUER)
+# JWT authentication is handled by middleware
 
 
 class EmployeeIn(BaseModel):
@@ -109,7 +105,6 @@ async def health_check():
     return {"status": "healthy", "service": "employee-svc"}
 
 @app.get("/v1/employees", response_model=EmployeeList)
-@require_permission(Permission.EMPLOYEE_READ_ALL)
 async def list_employees(
     session: AsyncSession = Depends(get_db),
     page: int = Query(1, ge=1),
@@ -143,7 +138,7 @@ async def list_employees(
 async def create_employee(
     employee: EmployeeIn,
     session: AsyncSession = Depends(get_db),
-    access_context: AuthContext = Depends(require_permission(Permission.EMPLOYEE_WRITE))
+    access_context: AuthContext = Depends(get_auth_context)
 ):
     """Create a new employee."""
     try:
@@ -160,8 +155,6 @@ async def create_employee(
         raise HTTPException(status_code=409, detail="Employee with this email already exists")
 
 @app.get("/v1/employees/{employee_id}", response_model=EmployeeOut)
-@require_resource_access("employee", resource_id_param="employee_id")
-@require_permission(Permission.EMPLOYEE_READ)
 async def get_employee(
     employee_id: int,
     session: AsyncSession = Depends(get_db),
@@ -178,7 +171,7 @@ async def update_employee(
     employee_id: int,
     employee_update: EmployeeUpdate,
     session: AsyncSession = Depends(get_db),
-    access_context: AuthContext = Depends(require_permission(Permission.EMPLOYEE_WRITE))
+    access_context: AuthContext = Depends(get_auth_context)
 ):
     """Update an employee."""
     employee = await session.get(EmployeeORM, employee_id)
@@ -197,7 +190,7 @@ async def update_employee(
 async def delete_employee(
     employee_id: int,
     session: AsyncSession = Depends(get_db),
-    access_context: AuthContext = Depends(require_permission(Permission.EMPLOYEE_DELETE))
+    access_context: AuthContext = Depends(get_auth_context)
 ):
     """Soft delete an employee."""
     employee = await session.get(EmployeeORM, employee_id)

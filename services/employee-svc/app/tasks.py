@@ -1,40 +1,38 @@
-"""Celery tasks for the service."""
-
 from celery import Celery
-import structlog
+from kombu import Exchange, Queue
 
-logger = structlog.get_logger(__name__)
+BROKER = "amqp://guest:guest@rabbitmq:5672//"
 
-# Initialize Celery app
-celery_app = Celery(
-    "tasks",
-    broker="redis://redis:6379/0",
-    backend="redis://redis:6379/0"
-)
-
-# Configure Celery
+celery_app = Celery("employee-tasks", broker=BROKER, backend=None)
 celery_app.conf.update(
     task_serializer="json",
     accept_content=["json"],
     result_serializer="json",
-    timezone="UTC",
-    enable_utc=True,
-    task_track_started=True,
-    task_time_limit=30 * 60,  # 30 minutes
-    task_soft_time_limit=25 * 60,  # 25 minutes
+    task_acks_late=True,
     worker_prefetch_multiplier=1,
-    worker_max_tasks_per_child=1000,
+    task_time_limit=120,
+    task_soft_time_limit=110,
+    broker_heartbeat=30,
+    broker_connection_retry_on_startup=True,
 )
 
-@celery_app.task(bind=True)
-def sample_task(self, message: str):
-    """Sample task for testing."""
-    logger.info("Processing sample task", message=message, task_id=self.request.id)
-    return f"Processed: {message}"
+# Employee service queues
+celery_app.conf.task_default_exchange = "employee"
+celery_app.conf.task_queues = (
+    Queue("employee.default", Exchange("employee", type="topic"), routing_key="employee.default", durable=True),
+    Queue("employee.dlq", Exchange("employee.dlx", type="fanout"), durable=True),
+)
 
-@celery_app.task(bind=True)
-def send_notification(self, recipient: str, subject: str, body: str):
-    """Send notification task."""
-    logger.info("Sending notification", recipient=recipient, subject=subject, task_id=self.request.id)
-    # TODO: Implement actual notification sending
-    return f"Notification sent to {recipient}"
+@celery_app.task(bind=True, name="employee.sample_task")
+def sample_task(self, message: str):
+    return {"ok": True, "message": message}
+
+@celery_app.task(bind=True, name="employee.send_welcome_email")
+def send_welcome_email(self, employee_id: int, email: str):
+    """Send a welcome email to a new employee."""
+    return {"ok": True, "employee_id": employee_id, "email": email}
+
+@celery_app.task(bind=True, name="employee.reindex_employee")
+def reindex_employee(self, employee_id: int):
+    """Reindex an employee in the search service."""
+    return {"ok": True, "employee_id": employee_id}
