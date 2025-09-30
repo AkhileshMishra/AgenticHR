@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import String, Integer, Boolean, DateTime, Float, ForeignKey, Index, Text, Date
+from sqlalchemy import String, Integer, Boolean, DateTime, Float, ForeignKey, Index, Text, Date, CheckConstraint
 from sqlalchemy.sql import func
 from datetime import datetime, date
 from typing import Optional
@@ -34,10 +34,8 @@ class LeaveBalanceORM(Base):
     __tablename__ = "leave_balances"
     
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    employee_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-    leave_type_id: Mapped[int] = mapped_column(ForeignKey("leave_types.id"), nullable=False)
-    year: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-    
+    employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id"), nullable=False, index=True)
+    leave_type_id: Mapped[int] = mapped_column(ForeignKey("leave_types.id"), nullable=False) 
     # Balance tracking
     allocated: Mapped[float] = mapped_column(Float, default=0.0)      # Total allocated for year
     used: Mapped[float] = mapped_column(Float, default=0.0)           # Used so far
@@ -61,7 +59,7 @@ class LeaveRequestORM(Base):
     __tablename__ = "leave_requests"
     
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    employee_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id"), nullable=False, index=True)
     leave_type_id: Mapped[int] = mapped_column(ForeignKey("leave_types.id"), nullable=False)
     
     # Request details
@@ -98,9 +96,12 @@ class LeaveRequestORM(Base):
     # Relationships
     leave_type: Mapped[LeaveTypeORM] = relationship("LeaveTypeORM")
     
-    # Indexes for common queries
+    # Indexes and constraints for common queries
     __table_args__ = (
         Index('ix_leave_requests_employee_status', 'employee_id', 'status'),
         Index('ix_leave_requests_dates', 'start_date', 'end_date'),
         Index('ix_leave_requests_manager', 'manager_id', 'status'),
+        Index('ix_leave_requests_employee_dates', 'employee_id', 'start_date', 'end_date'),
+        CheckConstraint('days_requested > 0', name='check_days_requested_positive'),
+        CheckConstraint('end_date >= start_date', name='check_end_date_after_start_date'),
     )

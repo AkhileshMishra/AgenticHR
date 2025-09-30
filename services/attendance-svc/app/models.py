@@ -1,7 +1,7 @@
 """Attendance service database models."""
 
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import String, Integer, Boolean, DateTime, Float, Index, Text
+from sqlalchemy import String, Integer, Boolean, DateTime, Float, Index, Text, ForeignKey, CheckConstraint
 from sqlalchemy.sql import func
 from datetime import datetime
 from typing import Optional
@@ -12,7 +12,7 @@ class ShiftORM(Base):
     __tablename__ = "shifts"
     
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    employee_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id"), nullable=False, index=True)
     date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     check_in: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     check_out: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -38,18 +38,20 @@ class ShiftORM(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
-    # Indexes for common queries
+    # Indexes and constraints for common queries
     __table_args__ = (
-        Index('ix_shifts_employee_date', 'employee_id', 'date'),
+        Index('ix_shifts_employee_date', 'employee_id', 'date', unique=True),
         Index('ix_shifts_date_status', 'date', 'status'),
         Index('ix_shifts_employee_status', 'employee_id', 'status'),
+        CheckConstraint('break_minutes >= 0', name='check_break_minutes_non_negative'),
+        CheckConstraint('total_hours >= 0', name='check_total_hours_non_negative'),
     )
 
 class AttendanceSummaryORM(Base):
     __tablename__ = "attendance_summaries"
     
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    employee_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id"), nullable=False, index=True)
     month: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     
     # Monthly totals
